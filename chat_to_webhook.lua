@@ -1,4 +1,3 @@
--- Local Chat Logger with Discord Webhook
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
@@ -8,29 +7,27 @@ local WEBHOOK_URL =
 
 local function sendToDiscord(message, player)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+
+    local embed = {{
+        ["title"] = "🎮 Listening",
+        ["color"] = 0x00FF00,
+        ["fields"] = {{
+            ["name"] = "🎨 Message",
+            ["value"] = message,
+            ["inline"] = true
+        }, {
+            ["name"] = "👤 Player",
+            ["value"] = player.Name,
+            ["inline"] = true
+        }},
+        ["footer"] = {
+            ["text"] = "Detected at: " .. timestamp
+        }
+    }}
+
     local data = {
-        ["content"] = "",
-        ["embeds"] = {{
-            ["title"] = "Chat Log",
-            ["description"] = message,
-            ["color"] = 5814783,
-            ["fields"] = {{
-                ["name"] = "Player",
-                ["value"] = player.Name .. " (@" .. player.DisplayName .. ")",
-                ["inline"] = true
-            }, {
-                ["name"] = "User ID",
-                ["value"] = tostring(player.UserId),
-                ["inline"] = true
-            }, {
-                ["name"] = "Timestamp",
-                ["value"] = timestamp,
-                ["inline"] = true
-            }},
-            ["footer"] = {
-                ["text"] = "Chat Logger"
-            }
-        }}
+        ["embeds"] = embed,
+        ["username"] = "Roblox"
     }
 
     local jsonData = HttpService:JSONEncode(data)
@@ -62,9 +59,6 @@ local function logChat(message, player)
 
     -- Kirim ke Discord
     sendToDiscord(message, player)
-
-    -- Simpan ke file lokal (opsional)
-    -- writefile("chat_log.txt", logEntry .. "\n", true)
 end
 
 -- Setup chat listener
