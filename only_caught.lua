@@ -6,12 +6,6 @@ local gui = player:WaitForChild("PlayerGui")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Tiers = require(game:GetService("ReplicatedStorage").Tiers)
 
-local eventsFrame = gui:WaitForChild("Events"):WaitForChild("Frame")
-local eventsFolder = eventsFrame:WaitForChild("Events")
-local serverLuck = eventsFrame:WaitForChild("Server Luck")
-local serverGui = serverLuck:WaitForChild("Server")
-local luckCounter = serverGui:WaitForChild("LuckCounter")
-
 local WEBHOOK_URL =
     "https://discord.com/api/webhooks/1439918334509322250/tLGCb_6iVxqoDT-RG1YLL4RG7Nulcvt-ydNDG-qsEb7U0Qy5DGwJhRdXVsLF8-3w6k7d"
 -- Cache untuk item data
@@ -224,6 +218,4 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
             print("❌ Failed to extract fish info from message")
         end
     end
-end 
--- Initial message when script starts
-sendEvent("🚀 **Script Started**\nMonitoring system activated!", "script_start", false)
+end  
