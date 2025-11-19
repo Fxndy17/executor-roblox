@@ -45,24 +45,47 @@ local function getItemData(itemName)
 end
 
 local function extractFishInfo(message)
-    -- Pattern untuk mengekstrak nama ikan dan berat dari format chat
-    -- Contoh: "Fxndy obtained a Crocodile (5.36K kg) with a 1 in 50K chance!"
-    local pattern = 'obtained a.-<font color="rgb%(%d+,%s*%d+,%s*%d+%)">(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
+    -- Pattern untuk format dengan tag font dan bold
+    -- Contoh: <b><font size="18">[Server]:</font></b> Fxndy obtained a <b><font color="rgb(174, 80, 255)">Skeleton Angler Fish (2.11kg)</font></b> with a 1 in 3K chance!
+    local pattern1 = 'obtained a.-<font color="rgb%(%d+,%s*%d+,%s*%d+%)">(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
+    
+    -- Pattern alternative untuk format dengan tag bold di dalam font
+    local pattern2 = 'obtained a.-<font[^>]+>.-<b>(.-)</b>%s*%(([%d%.]+[Kk]?) kg%)</font>'
+    
+    -- Pattern untuk format sederhana
+    local pattern3 = 'obtained a.-<font[^>]+>(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
+    
+    -- Pattern untuk format tanpa tag (clean text)
+    local pattern4 = 'obtained a (.-) %(([%d%.]+[Kk]?) kg%) with a'
 
-    local fishName, weight = string.match(message, pattern)
+    local fishName, weight
 
+    -- Coba pattern pertama
+    fishName, weight = string.match(message, pattern1)
     if fishName then
-        -- Bersihkan nama ikan dari tag HTML jika ada
         fishName = string.gsub(fishName, "<[^>]+>", "")
         fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
-
         return fishName, weight
     end
 
-    -- Alternative pattern untuk format berbeda
-    local altPattern = 'obtained a.-<font[^>]+>(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
-    fishName, weight = string.match(message, altPattern)
+    -- Coba pattern kedua
+    fishName, weight = string.match(message, pattern2)
+    if fishName then
+        fishName = string.gsub(fishName, "<[^>]+>", "")
+        fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
+        return fishName, weight
+    end
 
+    -- Coba pattern ketiga
+    fishName, weight = string.match(message, pattern3)
+    if fishName then
+        fishName = string.gsub(fishName, "<[^>]+>", "")
+        fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
+        return fishName, weight
+    end
+
+    -- Coba pattern keempat (clean text)
+    fishName, weight = string.match(message, pattern4)
     if fishName then
         fishName = string.gsub(fishName, "<[^>]+>", "")
         fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
@@ -73,10 +96,23 @@ local function extractFishInfo(message)
 end
 
 local function extractChanceInfo(message)
-    -- Pattern untuk mengekstrak chance info
-    -- Contoh: "with a 1 in 50K chance!"
-    local pattern = "with a 1 in (%d+[Kk]?) chance!"
-    local chance = string.match(message, pattern)
+    -- Pattern untuk chance info dari raw HTML
+    local pattern1 = "with a 1 in (%d+[Kk]?) chance!"
+    
+    -- Pattern alternative untuk clean text
+    local pattern2 = "with a 1 in (%d+[Kk]?) chance!"
+    
+    -- Pattern untuk format yang mungkin berbeda
+    local pattern3 = "1 in (%d+[Kk]?) chance!"
+
+    local chance = string.match(message, pattern1)
+    if not chance then
+        chance = string.match(message, pattern2)
+    end
+    if not chance then
+        chance = string.match(message, pattern3)
+    end
+    
     return chance
 end
 
