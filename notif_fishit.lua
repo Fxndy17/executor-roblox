@@ -1,11 +1,19 @@
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
-local Chat = game:GetService("Chat")
+local HTTPService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+local gui = player:WaitForChild("PlayerGui")
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Tiers = require(game:GetService("ReplicatedStorage").Tiers)
 
--- Discord Webhook URL
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1439918334509322250/tLGCb_6iVxqoDT-RG1YLL4RG7Nulcvt-ydNDG-qsEb7U0Qy5DGwJhRdXVsLF8-3w6k7d"
+local eventsFrame = gui:WaitForChild("Events"):WaitForChild("Frame")
+local eventsFolder = eventsFrame:WaitForChild("Events")
+local serverLuck = eventsFrame:WaitForChild("Server Luck")
+local serverGui = serverLuck:WaitForChild("Server")
+local luckCounter = serverGui:WaitForChild("LuckCounter")
 
+local WEBHOOK_URL =
+    "https://discord.com/api/webhooks/1439918334509322250/tLGCb_6iVxqoDT-RG1YLL4RG7Nulcvt-ydNDG-qsEb7U0Qy5DGwJhRdXVsLF8-3w6k7d"
 -- Cache untuk item data
 local ITEM_CACHE = {}
 
@@ -14,25 +22,25 @@ local function getItemData(itemName)
     if ITEM_CACHE[itemName] then
         return ITEM_CACHE[itemName]
     end
-    
+
     -- Cari item di ReplicatedStorage.Items
     local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
     if not itemsFolder then
         return nil
     end
-    
+
     local itemModule = itemsFolder:FindFirstChild(itemName)
     if itemModule and itemModule:IsA("ModuleScript") then
         local success, itemData = pcall(function()
             return require(itemModule)
         end)
-        
+
         if success and itemData then
             ITEM_CACHE[itemName] = itemData
             return itemData
         end
     end
-    
+
     return nil
 end
 
@@ -40,27 +48,27 @@ local function extractFishInfo(message)
     -- Pattern untuk mengekstrak nama ikan dan berat dari format chat
     -- Contoh: "Fxndy obtained a Crocodile (5.36K kg) with a 1 in 50K chance!"
     local pattern = 'obtained a.-<font color="rgb%(%d+,%s*%d+,%s*%d+%)">(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
-    
+
     local fishName, weight = string.match(message, pattern)
-    
+
     if fishName then
         -- Bersihkan nama ikan dari tag HTML jika ada
         fishName = string.gsub(fishName, "<[^>]+>", "")
         fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
-        
+
         return fishName, weight
     end
-    
+
     -- Alternative pattern untuk format berbeda
     local altPattern = 'obtained a.-<font[^>]+>(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
     fishName, weight = string.match(message, altPattern)
-    
+
     if fishName then
         fishName = string.gsub(fishName, "<[^>]+>", "")
         fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
         return fishName, weight
     end
-    
+
     return nil, nil
 end
 
@@ -73,171 +81,264 @@ local function extractChanceInfo(message)
 end
 
 local function getTierName(tierNumber)
-    local tierMap = {
-        [1] = "Common",
-        [2] = "Uncommon", 
-        [3] = "Rare",
-        [4] = "Epic",
-        [5] = "Legendary",
-        [6] = "Mythic",
-        [7] = "SECRET"
-    }
-    return tierMap[tierNumber] or "Unknown"
-end
-
-local function sendToDiscord(message, playerName, fishName, weight, chance, itemData)
-    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
-    
-    -- Konversi icon URL
-    local iconUrl = nil
-    if itemData and itemData.Data and itemData.Data.Icon then
-        local iconId = string.match(itemData.Data.Icon, "rbxassetid://(%d+)")
-        if iconId then
-            iconUrl = "https://assetdelivery.roblox.com/v1/asset/?id=" .. iconId
+    for _, tierData in ipairs(Tiers) do
+        if tierData.Tier == tierNumber then
+            return tierData.Name
         end
     end
-    
-    -- Dapatkan tier info
-    local tierName = "Unknown"
-    local tierNumber = 0
-    if itemData and itemData.Data and itemData.Data.Tier then
-        tierNumber = itemData.Data.Tier
-        tierName = getTierName(tierNumber)
-    end
-    
-    -- Warna embed berdasarkan tier
-    local tierColors = {
-        [1] = 0xFFFFFF, -- Common: White
-        [2] = 0x00FF00, -- Uncommon: Green
-        [3] = 0x0064FF, -- Rare: Blue
-        [4] = 0x800080, -- Epic: Purple
-        [5] = 0xFFB92B, -- Legendary: Gold
-        [6] = 0xFF0000, -- Mythic: Red
-        [7] = 0x00FFFF  -- SECRET: Cyan
-    }
-    
-    local embedColor = tierColors[tierNumber] or 0x808080
-    
-    -- Format fields
-    local fields = {
-        {
-            ["name"] = "🎣 Fish Caught",
-            ["value"] = "**" .. fishName .. "**",
-            ["inline"] = true
-        },
-        {
-            ["name"] = "⚖️ Weight", 
-            ["value"] = weight .. " kg",
-            ["inline"] = true
-        },
-        {
-            ["name"] = "⭐ Tier",
-            ["value"] = tierName .. " (Tier " .. tierNumber .. ")",
-            ["inline"] = true
-        },
-        {
-            ["name"] = "🎯 Chance",
-            ["value"] = "1 in " .. chance,
-            ["inline"] = true
-        },
-        {
-            ["name"] = "👤 Player", 
-            ["value"] = playerName,
-            ["inline"] = true
-        },
-        {
-            ["name"] = "💰 Sell Price",
-            ["value"] = itemData and itemData.SellPrice and tostring(itemData.SellPrice) or "Unknown",
-            ["inline"] = true
-        }
-    }
+    return nil -- Return nil if tier number not found
+end
 
-    local embed = {
-        {
-            ["title"] = "🎣 FISH CATCH ALERT!",
-            ["color"] = embedColor,
-            ["fields"] = fields,
-            ["thumbnail"] = iconUrl and {["url"] = iconUrl} or nil,
-            ["footer"] = {
-                ["text"] = "Caught at: " .. timestamp
-            },
-            ["author"] = {
-                ["name"] = "Fishing Logger",
-                ["icon_url"] = "https://cdn.discordapp.com/attachments/1439918334509322250/1439918334509322250/tLGCb_6iVxqoDT-RG1YLL4RG7Nulcvt-ydNDG-qsEb7U0Qy5DGwJhRdXVsLF8-3w6k7d?ex=66d5f3e6&is=66d4a266&hm=8a7f5a5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c&"
-            }
-        }
-    }
+-- Function to get tier data by tier number
+local function getTierData(tierNumber)
+    for _, tierData in ipairs(Tiers) do
+        if tierData.Tier == tierNumber then
+            return tierData
+        end
+    end
+    return nil
+end
+
+-- Function to get tier data by tier name
+local function getTierDataByName(tierName)
+    for _, tierData in ipairs(Tiers) do
+        if tierData.Name == tierName then
+            return tierData
+        end
+    end
+    return nil
+end
+
+------------------------------------------------------
+-- SEND EVENT TO DISCORD WEBHOOK
+------------------------------------------------------
+local function sendEvent(message, eventType, pingEveryone)
+    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+    local content = pingEveryone and "@everyone" or ""
+    
+    -- Tentukan warna berdasarkan jenis event
+    local color = 5814783 -- Default color (biru)
+    if eventType == "event_active" then
+        color = 3066993 -- Hijau untuk event aktif
+    elseif eventType == "event_inactive" then
+        color = 15158332 -- Merah untuk event non-aktif
+    elseif eventType == "server_luck" then
+        color = 15844367 -- Emas untuk server luck
+    elseif eventType == "script_start" then
+        color = 3447003 -- Biru untuk script start
+    end
 
     local data = {
-        ["embeds"] = embed,
-        ["username"] = "Fishing Notifier",
-        ["avatar_url"] = "https://cdn.discordapp.com/attachments/1439918334509322250/1439918334509322250/tLGCb_6iVxqoDT-RG1YLL4RG7Nulcvt-ydNDG-qsEb7U0Qy5DGwJhRdXVsLF8-3w6k7d?ex=66d5f3e6&is=66d4a266&hm=8a7f5a5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c&"
+        ["content"] = content,
+        ["embeds"] = {{
+            ["title"] = "🎮 Game Event Notification",
+            ["description"] = message,
+            ["color"] = color,
+            ["footer"] = {
+                ["text"] = "Timestamp: " .. timestamp
+            },
+            ["thumbnail"] = {
+                ["url"] = "https://cdn.discordapp.com/emojis/1117363660576395324.webp"
+            }
+        }}
     }
 
-    local jsonData = HttpService:JSONEncode(data)
+    local jsonData = HTTPService:JSONEncode(data)
 
     local success, result = pcall(function()
-        return HttpService:PostAsync(WEBHOOK_URL, jsonData, Enum.HttpContentType.ApplicationJson)
+        return request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
     end)
 
-    if success then
-        print("✅ Webhook berhasil dikirim! Fish: " .. fishName)
-    else
-        print("❌ Gagal mengirim webhook: " .. tostring(result))
+    if not success then
+        warn("[WEBHOOK ERROR] Failed to send event:", result)
     end
 end
 
-local function logChat(message, player, isSystemMessage)
-    local timestamp = os.date("%H:%M:%S")
-    local sender = isSystemMessage and "[SYSTEM]" or player.Name
+------------------------------------------------------
+-- SEND FISH CAUGHT TO DISCORD WEBHOOK
+------------------------------------------------------
+local function sendFishCaught(fishName, weight, chance, tierName, tierNumber, iconUrl)
+    local timestamp = os.date("%Y-%m-%d %H:%M:%S")
     
-    print("[" .. timestamp .. "] " .. sender .. ": " .. message)
+    -- Tentukan warna berdasarkan tier
+    local color = 5814783 -- Default color
+    local tierData = getTierData(tierNumber)
+    if tierData and tierData.Color then
+        color = tierData.Color
+    end
 
-    -- Cek jika ini message tentang mendapatkan ikan
-    if string.find(message, "obtained a") and string.find(message, "kg") then
-        local fishName, weight = extractFishInfo(message)
-        local chance = extractChanceInfo(message)
-        
+    local embed = {
+        ["title"] = "🎣 FISH CAUGHT!",
+        ["description"] = string.format(
+            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)",
+            player.Name, fishName, weight, chance, tierName, tierNumber
+        ),
+        ["color"] = color,
+        ["footer"] = {
+            ["text"] = "Timestamp: " .. timestamp
+        }
+    }
+
+    -- Tambahkan thumbnail jika ada icon
+    if iconUrl then
+        embed["thumbnail"] = {
+            ["url"] = iconUrl
+        }
+    end
+
+    local data = {
+        ["content"] = "@everyone 🎣 **FISH CAUGHT!**",
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    local success, result = pcall(function()
+        return request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    if not success then
+        warn("[WEBHOOK ERROR] Failed to send fish caught:", result)
+    else
+        print("✅ Fish caught notification sent to Discord!")
+    end
+end
+
+------------------------------------------------------
+-- REMOVE RICH TEXT FROM STRING (<b>, <font>, etc)
+------------------------------------------------------
+local function stripRichText(str)
+    return (str:gsub("<[^>]->", "")) -- remove tags <...>
+end
+
+------------------------------------------------------
+-- CHAT PARSER (CLEAN CHAT)
+------------------------------------------------------
+game:GetService("TextChatService").OnIncomingMessage = function(msg)
+    local rawText = msg.Text
+    local clean = stripRichText(rawText)
+
+    if string.find(clean, "obtained a") and string.find(clean, "kg") then
+        local fishName, weight = extractFishInfo(rawText)
+        local chance = extractChanceInfo(rawText)
+
         if fishName and weight and chance then
             print("🎣 Fish detected: " .. fishName .. " (" .. weight .. " kg) - Chance: 1 in " .. chance)
-            
+
             -- Dapatkan data item dari ReplicatedStorage
             local itemData = getItemData(fishName)
-            
-            if itemData then
-                print("📦 Item data found: Tier " .. (itemData.Data.Tier or "Unknown"))
-            else
-                print("⚠️ Item data not found for: " .. fishName)
+
+            -- Konversi icon URL
+            local iconUrl = nil
+            if itemData and itemData.Data and itemData.Data.Icon then
+                local iconId = string.match(itemData.Data.Icon, "rbxassetid://(%d+)")
+                if iconId then
+                    iconUrl = "https://assetdelivery.roblox.com/v1/asset/?id=" .. iconId
+                end
             end
-            
-            -- Kirim ke Discord
-            sendToDiscord(message, player.Name, fishName, weight, chance, itemData)
+
+            -- Dapatkan tier info
+            local tierName = "Unknown"
+            local tierNumber = 0
+            if itemData and itemData.Data and itemData.Data.Tier then
+                tierNumber = itemData.Data.Tier
+                tierName = getTierName(tierNumber) or "Unknown"
+            end
+
+            -- Kirim notifikasi fish caught
+            sendFishCaught(fishName, weight, chance, tierName, tierNumber, iconUrl)
         else
             print("❌ Failed to extract fish info from message")
         end
     end
 end
 
--- Listener untuk chat player
-for _, player in pairs(Players:GetPlayers()) do
-    player.Chatted:Connect(function(message)
-        logChat(message, player, false)
-    end)
+------------------------------------------------------
+-- WATCH IMAGEBUTTON / IMAGELABEL VISIBLE CHANGES
+------------------------------------------------------
+local function watchEvent(obj)
+    if obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
+        obj.Changed:Connect(function(prop)
+            if prop == "Visible" then
+                local status = obj.Visible and "🟢 VISIBLE" or "🔴 HIDDEN"
+                local eventName = obj.Name
+                
+                if obj.Visible then
+                    sendEvent(
+                        string.format("**Event Active!**\n**Event Name:** %s\n**Status:** 🟢 ACTIVE", eventName),
+                        "event_active",
+                        true
+                    )
+                else
+                    sendEvent(
+                        string.format("**Event Ended!**\n**Event Name:** %s\n**Status:** 🔴 INACTIVE", eventName),
+                        "event_inactive",
+                        false
+                    )
+                end
+            end
+        end)
+    end
 end
 
-Players.PlayerAdded:Connect(function(player)
-    player.Chatted:Connect(function(message)
-        logChat(message, player, false)
-    end)
+-- Pantau semua yang sudah ada
+for _, obj in ipairs(eventsFolder:GetDescendants()) do
+    watchEvent(obj)
+end
+
+-- Pantau yang baru masuk
+eventsFolder.DescendantAdded:Connect(function(obj)
+    watchEvent(obj)
 end)
 
--- Listener untuk system messages
-Chat.MessagePosted:Connect(function(message, channelName)
-    if string.find(channelName, "System") or string.find(message, "^%[.*%].*:") then
-        -- Untuk system messages, kita gunakan nil player
-        logChat(message, {Name = "System"}, true)
+------------------------------------------------------
+-- WATCH SERVER LUCK VISIBLE
+------------------------------------------------------
+serverGui.Changed:Connect(function(prop)
+    if prop == "Visible" then
+        if serverGui.Visible then
+            sendEvent(
+                "**🍀 SERVER LUCK ACTIVE!**\nServer Luck event is now active!",
+                "event_active",
+                true
+            )
+        else
+            sendEvent(
+                "**🍀 SERVER LUCK ENDED!**\nServer Luck event has ended.",
+                "event_inactive",
+                false
+            )
+        end
     end
 end)
 
-print("🎣 Fishing Logger Started!")
-print("Akan mendeteksi dan log semua fish catches ke Discord")
+------------------------------------------------------
+-- WATCH LUCKCOUNTER TEXT CHANGE
+------------------------------------------------------
+luckCounter:GetPropertyChangedSignal("Text"):Connect(function()
+    local luckValue = luckCounter.Text
+    print("[LUCK COUNTER] Text:", luckValue)
+
+    sendEvent(
+        string.format("**🍀 SERVER LUCK UPDATE**\n**Current Luck:** %s", luckValue),
+        "server_luck",
+        false
+    )
+end)
+
+-- Initial message when script starts
+sendEvent("🚀 **Script Started**\nMonitoring system activated!", "script_start", false)
