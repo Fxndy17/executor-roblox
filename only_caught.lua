@@ -39,39 +39,14 @@ local function getItemData(itemName)
 end
 
 local function extractFishInfo(message)
-    -- Pattern untuk raw HTML dengan font color
-    local pattern1 = 'obtained a.-<font color="rgb%(%d+,%s*%d+,%s*%d+%)">(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
-    
-    -- Pattern untuk raw HTML dengan bold di dalam font
-    local pattern2 = 'obtained a.-<font[^>]+><b>(.-)</b>%s*%(([%d%.]+[Kk]?) kg%)</font>'
-    
-    -- Pattern untuk raw HTML tanpa bold
-    local pattern3 = 'obtained a.-<font[^>]+>(.-)%s*%(([%d%.]+[Kk]?) kg%)</font>'
+    -- Tangkap teks di dalam <font ...> ... (XX.Ykg)
+    local fishName, weight = string.match(message,
+        '<font%s+[^>]->(.-)%(([%d%.]+)kg%)</font>'
+    )
 
-    local fishName, weight
-
-    -- Coba pattern pertama
-    fishName, weight = string.match(message, pattern1)
     if fishName then
-        -- Hapus tag HTML dari fishName jika ada
-        fishName = string.gsub(fishName, "<[^>]+>", "")
-        fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
-        return fishName, weight
-    end
-
-    -- Coba pattern kedua
-    fishName, weight = string.match(message, pattern2)
-    if fishName then
-        fishName = string.gsub(fishName, "<[^>]+>", "")
-        fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
-        return fishName, weight
-    end
-
-    -- Coba pattern ketiga
-    fishName, weight = string.match(message, pattern3)
-    if fishName then
-        fishName = string.gsub(fishName, "<[^>]+>", "")
-        fishName = string.gsub(fishName, "^%s*(.-)%s*$", "%1")
+        fishName = fishName:gsub("<[^>]+>", "") -- hapus <b>
+        fishName = fishName:gsub("^%s*(.-)%s*$", "%1")
         return fishName, weight
     end
 
@@ -79,11 +54,7 @@ local function extractFishInfo(message)
 end
 
 local function extractChanceInfo(message)
-    -- Pattern untuk chance info dari raw HTML
-    local pattern = "with a 1 in (%d+[%.]?%d*[Kk]?) chance!"
-    
-    local chance = string.match(message, pattern)
-    return chance
+    return string.match(message, "1 in%s+([%d%.]+[Kk]?)%s+chance")
 end
 
 local function getTierName(tierNumber)
