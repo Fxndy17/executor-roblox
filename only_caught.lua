@@ -18,12 +18,12 @@ local function getItemData(itemName)
     end
 
     -- Cari item di ReplicatedStorage.Items
-    local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
+    local itemsFolder = ReplicatedStorage:WaitForChild("Items")
     if not itemsFolder then
         return nil
     end
 
-    local itemModule = itemsFolder:FindFirstChild(itemName)
+    local itemModule = itemsFolder:WaitForChild(itemName)
     if itemModule and itemModule:IsA("ModuleScript") then
         local success, itemData = pcall(function()
             return require(itemModule)
@@ -113,8 +113,8 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     local embed = {
         ["title"] = "🎣 FISH CAUGHT!",
         ["description"] = string.format(
-            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", 
-            fisher, fishName, weight, chance, tierName, tierNumber),
+            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", fisher,
+            fishName, weight, chance, tierName, tierNumber),
         ["color"] = color,
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
@@ -150,6 +150,59 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
         warn("[WEBHOOK ERROR] Failed to send fish caught:", result)
     else
         print("✅ Fish caught notification sent to Discord!")
+    end
+end
+
+------------------------------------------------------
+-- SEND DEBUG DATA KE DISCORD WEBHOOK
+------------------------------------------------------
+local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, chance)
+    local embed = {
+        ["title"] = "🐞 DEBUG: " .. (label or "Unknown"),
+        ["color"] = 15158332, -- merah
+        ["fields"] = {{
+            ["name"] = "Raw Text",
+            ["value"] = "```" .. tostring(rawText) .. "```"
+        }, {
+            ["name"] = "Clean Text",
+            ["value"] = "```" .. tostring(cleanText) .. "```"
+        }, {
+            ["name"] = "Player Parsed",
+            ["value"] = tostring(fisher)
+        }, {
+            ["name"] = "Fish Name Parsed",
+            ["value"] = tostring(fishName)
+        }, {
+            ["name"] = "Weight Parsed",
+            ["value"] = tostring(weight)
+        }, {
+            ["name"] = "Chance Parsed",
+            ["value"] = tostring(chance)
+        }}
+    }
+
+    local data = {
+        ["content"] = "🐞 **DEBUG DATA RECEIVED**",
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    local success, result = pcall(function()
+        return request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    if not success then
+        warn("[DEBUG ERROR] Failed to send debug:", result)
+    else
+        warn("🐞 DEBUG SENT!")
     end
 end
 
@@ -199,6 +252,7 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
             sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
         else
             print("❌ Failed to extract fish info from message")
+            sendDebug("Parsing Failed", rawText, clean, fisher, fishName, weight, chance)
         end
     end
 end
