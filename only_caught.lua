@@ -39,25 +39,34 @@ local function getItemData(itemName)
 end
 
 local function extractPlayer(message)
-    -- Tangkap nama player sebelum " obtained a"
-    return string.match(message, "%]:%s*(.-)%s+obtained%s+a")
+    -- Setelah </font></b> pasti langsung nama player
+    return string.match(message, "</font></b>%s*(%w+)")
 end
 
 local function extractFishInfo(message)
-    -- Ambil nama ikan + weight di dalam font
-    local raw = string.match(message, '<font%s+[^>]->(.-)</font>')
-    if not raw then
+    -- Ambil semua content di dalam <font ...>...</font>
+    local matches = {}
+    for content in message:gmatch("<font%s+[^>]->(.-)</font>") do
+        table.insert(matches, content)
+    end
+
+    -- Jika tidak ada font, gagal
+    if #matches == 0 then
         return nil, nil
     end
 
-    -- Nama ikan
-    local fishName = string.match(raw, "^(.-)%s*%(")
-    -- Berat
-    local weight = string.match(raw, "%(([%d%.]+)kg%)")
+    -- Anggap fish ada di font terakhir
+    local raw = matches[#matches]
+
+    -- Ambil nama ikan sebelum "("
+    local fishName = raw:match("^(.-)%s*%(")
+    -- Ambil berat 1.54kg
+    local weight = raw:match("%(([%d%.]+)kg%)")
 
     if fishName and weight then
-        fishName = fishName:gsub("<[^>]+>", "") -- hapus <b> jika ada
-        fishName = fishName:gsub("^%s*(.-)%s*$", "%1") -- trim
+        -- hapus tag <b> kalau ada
+        fishName = fishName:gsub("<[^>]+>", "")
+        fishName = fishName:gsub("^%s*(.-)%s*$", "%1")
         return fishName, weight
     end
 
