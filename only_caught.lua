@@ -38,43 +38,22 @@ local function getItemData(itemName)
     return nil
 end
 
-local function extractPlayer(message)
-    -- Setelah </font></b> pasti langsung nama player
-    return string.match(message, "</font></b>%s*(%w+)")
+local function extractPlayer(clean)
+    return clean:match("%]:%s*(%w+)")
 end
 
-local function extractFishInfo(message)
-    -- Ambil semua content di dalam <font ...>...</font>
-    local matches = {}
-    for content in message:gmatch("<font%s+[^>]->(.-)</font>") do
-        table.insert(matches, content)
-    end
+local function extractFishInfo(clean)
+    -- Nama ikan ambil sebelum "("
+    local fish = clean:match("obtained a%s+([%w%s]+)%s*%(")
 
-    -- Jika tidak ada font, gagal
-    if #matches == 0 then
-        return nil, nil
-    end
+    -- Berat: angka+kg atau angka+K kg
+    local weight = clean:match("%(([%d%.]+%s*%a+)%s*%)")
 
-    -- Anggap fish ada di font terakhir
-    local raw = matches[#matches]
-
-    -- Ambil nama ikan sebelum "("
-    local fishName = raw:match("^(.-)%s*%(")
-    -- Ambil berat 1.54kg
-    local weight = raw:match("%(([%d%.]+)kg%)")
-
-    if fishName and weight then
-        -- hapus tag <b> kalau ada
-        fishName = fishName:gsub("<[^>]+>", "")
-        fishName = fishName:gsub("^%s*(.-)%s*$", "%1")
-        return fishName, weight
-    end
-
-    return nil, nil
+    return fish, weight
 end
 
-local function extractChanceInfo(msg)
-    return string.match(msg, "1 in%s+([%d%.]+[Kk]?)%s+chance")
+local function extractChanceInfo(clean)
+    return clean:match("1 in%s+([%d%.]+[Kk]?)")
 end
 
 local function getTierName(tierNumber)
@@ -229,7 +208,7 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
     local rawText = msg.Text
     local clean = stripRichText(rawText)
 
-    if string.find(rawText, "obtained a") and string.find(rawText, "kg") then
+    if clean:find("obtained a") and clean:find("kg") then
         local fisher = extractPlayer(rawText)
         local fishName, weight = extractFishInfo(rawText)
         local chance = extractChanceInfo(rawText)
