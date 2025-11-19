@@ -38,23 +38,34 @@ local function getItemData(itemName)
     return nil
 end
 
-local function extractFishInfo(message)
-    -- Tangkap teks di dalam <font ...> ... (XX.Ykg)
-    local fishName, weight = string.match(message,
-        '<font%s+[^>]->(.-)%(([%d%.]+)kg%)</font>'
-    )
+local function extractPlayer(message)
+    -- Tangkap nama player sebelum " obtained a"
+    return string.match(message, "%]:%s*(.-)%s+obtained%s+a")
+end
 
-    if fishName then
-        fishName = fishName:gsub("<[^>]+>", "") -- hapus <b>
-        fishName = fishName:gsub("^%s*(.-)%s*$", "%1")
+local function extractFishInfo(message)
+    -- Ambil nama ikan + weight di dalam font
+    local raw = string.match(message, '<font%s+[^>]->(.-)</font>')
+    if not raw then
+        return nil, nil
+    end
+
+    -- Nama ikan
+    local fishName = string.match(raw, "^(.-)%s*%(")
+    -- Berat
+    local weight = string.match(raw, "%(([%d%.]+)kg%)")
+
+    if fishName and weight then
+        fishName = fishName:gsub("<[^>]+>", "") -- hapus <b> jika ada
+        fishName = fishName:gsub("^%s*(.-)%s*$", "%1") -- trim
         return fishName, weight
     end
 
     return nil, nil
 end
 
-local function extractChanceInfo(message)
-    return string.match(message, "1 in%s+([%d%.]+[Kk]?)%s+chance")
+local function extractChanceInfo(msg)
+    return string.match(msg, "1 in%s+([%d%.]+[Kk]?)%s+chance")
 end
 
 local function getTierName(tierNumber)
@@ -89,7 +100,7 @@ end
 ------------------------------------------------------
 -- SEND FISH CAUGHT TO DISCORD WEBHOOK
 ------------------------------------------------------
-local function sendFishCaught(fishName, weight, chance, tierName, tierNumber, iconUrl)
+local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
     -- Tentukan warna berdasarkan tier
@@ -102,8 +113,8 @@ local function sendFishCaught(fishName, weight, chance, tierName, tierNumber, ic
     local embed = {
         ["title"] = "🎣 FISH CAUGHT!",
         ["description"] = string.format(
-            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", player.Name,
-            fishName, weight, chance, tierName, tierNumber),
+            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", 
+            fisher, fishName, weight, chance, tierName, tierNumber),
         ["color"] = color,
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
@@ -157,10 +168,11 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
     local clean = stripRichText(rawText)
 
     if string.find(rawText, "obtained a") and string.find(rawText, "kg") then
+        local fisher = extractPlayer(rawText)
         local fishName, weight = extractFishInfo(rawText)
         local chance = extractChanceInfo(rawText)
 
-        if fishName and weight and chance then
+        if fisher and fishName and weight and chance then
             print("🎣 Fish detected: " .. fishName .. " (" .. weight .. " kg) - Chance: 1 in " .. chance)
 
             -- Dapatkan data item dari ReplicatedStorage
@@ -184,9 +196,9 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
             end
 
             -- Kirim notifikasi fish caught
-            sendFishCaught(fishName, weight, chance, tierName, tierNumber, iconUrl)
+            sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
         else
             print("❌ Failed to extract fish info from message")
         end
     end
-end  
+end
