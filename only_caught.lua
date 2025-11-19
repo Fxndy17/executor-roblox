@@ -209,9 +209,9 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
     local clean = stripRichText(rawText)
 
     if clean:find("obtained a") and clean:find("kg") then
-        local fisher = extractPlayer(rawText)
-        local fishName, weight = extractFishInfo(rawText)
-        local chance = extractChanceInfo(rawText)
+        local fisher = extractPlayer(clean)
+        local fishName, weight = extractFishInfo(clean)
+        local chance = extractChanceInfo(clean)
 
         if fisher and fishName and weight and chance then
             print("🎣 Fish detected: " .. fishName .. " (" .. weight .. " kg) - Chance: 1 in " .. chance)
