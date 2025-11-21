@@ -43,17 +43,17 @@ local function extractPlayer(clean)
 end
 
 local function extractFishInfo(clean)
-    -- Nama ikan ambil sebelum "("
+    -- Fish name: ambil semua teks antara "obtained a" dan "("
     local fish = clean:match("obtained a%s+([%w%s]+)%s*%(")
-
-    -- Berat: angka+kg atau angka+K kg
-    local weight = clean:match("%(([%d%.]+%s*%a+)%s*%)")
+    
+    -- Weight: ambil isi dalam kurung (angka + optional K + optional spasi + kg)
+    local weight = clean:match("%(([%d%.]+%s*%a+)%)")
 
     return fish, weight
 end
 
 local function extractChanceInfo(clean)
-    return clean:match("1 in%s+([%d%.]+[Kk]?)")
+    return clean:match("1 in%s+([%w]+)")
 end
 
 local function getTierName(tierNumber)
@@ -209,9 +209,9 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
     local clean = stripRichText(rawText)
 
     if clean:find("obtained a") and clean:find("kg") then
-        local fisher = extractPlayer(rawText)
-        local fishName, weight = extractFishInfo(rawText)
-        local chance = extractChanceInfo(rawText)
+        local fisher = extractPlayer(clean)
+        local fishName, weight = extractFishInfo(clean)
+        local chance = extractChanceInfo(clean)
 
         if fisher and fishName and weight and chance then
             print("🎣 Fish detected: " .. fishName .. " (" .. weight .. " kg) - Chance: 1 in " .. chance)
