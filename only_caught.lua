@@ -46,9 +46,15 @@ local function extractFishInfo(clean)
     -- Fish name: ambil semua teks antara "obtained a" dan "("
     local fish = clean:match("obtained a%s+([%w%s]+)%s*%(")
     
-    -- Weight: ambil isi dalam kurung (angka + optional K + optional spasi + kg)
-    local weight = clean:match("%(([%d%.]+%s*%a+)%)")
-
+    -- Weight: pattern yang lebih fleksibel untuk menangani format seperti "4.93K kg"
+    -- Mencocokkan: angka, titik, optional K/M, spasi, dan "kg"
+    local weight = clean:match("%(([%d%.]+%s*[KM]?%s*kg)%)")
+    
+    -- Jika tidak match, coba pattern alternatif tanpa "kg"
+    if not weight then
+        weight = clean:match("%(([%d%.]+%s*[KM]?)%)")
+    end
+    
     return fish, weight
 end
 
