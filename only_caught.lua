@@ -11,6 +11,36 @@ local WEBHOOK_URL =
 -- Cache untuk item data
 local ITEM_CACHE = {}
 
+local function isSimilar(baseName, inputName)
+    baseName = baseName:lower()
+    inputName = inputName:lower()
+
+    -- 1. Kalau baseName ada di dalam input → auto match
+    if inputName:find(baseName, 1, true) then
+        return true
+    end
+
+    -- 2. Cek per kata (Angrylion Fish)
+    local allWordsMatch = true
+    for word in baseName:gmatch("%S+") do
+        if not inputName:find(word, 1, true) then
+            allWordsMatch = false
+            break
+        end
+    end
+
+    return allWordsMatch
+end
+
+local function findSimilarChild(folder, inputName)
+    for _, child in ipairs(folder:GetChildren()) do
+        if isSimilar(child.Name, inputName) then
+            return child
+        end
+    end
+    return nil
+end
+
 local function getItemData(itemName)
     -- Cek cache dulu
     if ITEM_CACHE[itemName] then
@@ -23,7 +53,12 @@ local function getItemData(itemName)
         return nil
     end
 
-    local itemModule = itemsFolder:WaitForChild(itemName)
+    local itemModule = itemsFolder:FindFirstChild(itemName)
+
+    if not itemModule then
+        itemModule = findSimilarChild(itemsFolder, itemName)
+    end
+
     if itemModule and itemModule:IsA("ModuleScript") then
         local success, itemData = pcall(function()
             return require(itemModule)
@@ -45,16 +80,16 @@ end
 local function extractFishInfo(clean)
     -- Fish name: ambil semua teks antara "obtained a" dan "("
     local fish = clean:match("obtained a%s+([%w%s]+)%s*%(")
-    
+
     -- Weight: pattern yang lebih fleksibel untuk menangani format seperti "4.93K kg"
     -- Mencocokkan: angka, titik, optional K/M, spasi, dan "kg"
     local weight = clean:match("%(([%d%.]+%s*[KM]?%s*kg)%)")
-    
+
     -- Jika tidak match, coba pattern alternatif tanpa "kg"
     if not weight then
         weight = clean:match("%(([%d%.]+%s*[KM]?)%)")
     end
-    
+
     return fish, weight
 end
 
