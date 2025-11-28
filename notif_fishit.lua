@@ -12,11 +12,15 @@ local serverLuck = eventsFrame:WaitForChild("Server Luck")
 local serverGui = serverLuck:WaitForChild("Server")
 local luckCounter = serverGui:WaitForChild("LuckCounter")
 
-local WEBHOOK_URL =
-    "https://discord.com/api/webhooks/1442898386406739989/FweK2dBOkVYZT4rqqrORf8exi1ofVl30xU7Fhfh2C2NwbDu7enURhnz8f49WRv6r7_O0"
-local API_BASE_URL = "https://fishitapi-production.up.railway.app/api" -- Ganti dengan URL API kamu
+-- Configuration
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1443771055356510402/pxvJmtbO-jQ_GPOfrpaIUxFgYLTAFRaizAlnMf4GgEvM3fehfJyC8AVswEqHtqH5xGkN"
+local API_BASE_URL = "https://fishitapi-production.up.railway.app/api"
 
 local ITEM_CACHE = {}
+
+------------------------------------------------------
+-- UTILITY FUNCTIONS
+------------------------------------------------------
 
 local function isSimilar(baseName, inputName)
     baseName = baseName:lower()
@@ -76,18 +80,11 @@ local function getItemData(itemName)
     return nil
 end
 
- 
 local function getPlayer(query)
     query = query:lower()
 
     for _, plr in ipairs(Players:GetPlayers()) do
-        -- cek USERNAME lowercase
-        if plr.Name:lower() == query then
-            return plr
-        end
-        
-        -- cek DISPLAYNAME lowercase
-        if plr.DisplayName:lower() == query then
+        if plr.Name:lower() == query or plr.DisplayName:lower() == query then
             return plr
         end
     end
@@ -136,23 +133,18 @@ local function getTierData(tierNumber)
     return nil
 end
 
-local function getTierDataByName(tierName)
-    for _, tierData in ipairs(Tiers) do
-        if tierData.Name == tierName then
-            return tierData
-        end
-    end
-    return nil
+local function stripRichText(str)
+    return (str:gsub("<[^>]->", ""))
 end
 
 ------------------------------------------------------
--- API
+-- API FUNCTIONS
 ------------------------------------------------------
 
-local function getAllUsers()
+local function getAllAccounts()
     local success, result = pcall(function()
         local response = request({
-            Url = API_BASE_URL .. "/users",
+            Url = API_BASE_URL .. "/accounts",
             Method = "GET",
             Headers = {
                 ["Content-Type"] = "application/json"
@@ -163,7 +155,7 @@ local function getAllUsers()
             local decoded = HTTPService:JSONDecode(response.Body)
             return decoded
         else
-            warn("[API] Request failed:", response.StatusCode, response.Body)
+            warn("[API] Request failed:", response.StatusCode)
             return nil
         end
     end)
@@ -190,7 +182,7 @@ local function getUsersWithNotification(notificationType, enabled)
             local decoded = HTTPService:JSONDecode(response.Body)
             return decoded
         else
-            warn("[API] Request failed for notifications:", response.StatusCode, response.Body)
+            warn("[API] Request failed for notifications:", response.StatusCode)
             return nil
         end
     end)
@@ -203,22 +195,22 @@ local function getUsersWithNotification(notificationType, enabled)
     return result
 end
 
-local function findUserByRoblox(username)
+local function findUserByRobloxUsername(username)
     local plr = getPlayer(username)
 
     if plr == nil then
-        print("not found player")
-        return
-    end
-
-    local allUsers = getAllUsers()
-    if not allUsers or not allUsers.success then
+        print("❌ Player not found:", username)
         return nil
     end
 
-    for _, user in ipairs(allUsers.data) do
-        if user.id_roblox and tonumber(user.id_roblox) == tonumber(plr.userId)  then
-            return user
+    local allAccounts = getAllAccounts()
+    if not allAccounts or not allAccounts.success then
+        return nil
+    end
+
+    for _, account in ipairs(allAccounts.data) do
+        if account.id_roblox and tonumber(account.id_roblox) == tonumber(plr.UserId) then
+            return account
         end
     end
     return nil
@@ -229,28 +221,58 @@ local function generateUserMentions(users)
     for _, user in ipairs(users) do
         table.insert(mentions, "<@" .. user.id_discord .. ">")
     end
-    return table.concat(mentions, " ")
+    return table.concat(mentions, ", ")
+end
+
+local function getOnlineUsersWithNotification(notificationType, enabled)
+    local notificationUsers = getUsersWithNotification(notificationType, enabled)
+    if not notificationUsers or not notificationUsers.success then
+        return {}
+    end
+    
+    local onlineUsers = {}
+    local onlinePlayerNames = {}
+    
+    -- Get list of online player usernames
+    for _, player in ipairs(Players:GetPlayers()) do
+        table.insert(onlinePlayerNames, player.Name:lower())
+    end
+    
+    -- Filter users yang sedang online dan punya notifikasi enabled
+    for _, user in ipairs(notificationUsers.data) do
+        for _, account in ipairs(user.roblox_accounts or {}) do
+            if account.username_roblox then
+                local usernameLower = account.username_roblox:lower()
+                for _, onlineName in ipairs(onlinePlayerNames) do
+                    if onlineName == usernameLower then
+                        table.insert(onlineUsers, user)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    
+    return onlineUsers
 end
 
 ------------------------------------------------------
--- SEND FISH CAUGHT TO DISCORD WEBHOOK
+-- WEBHOOK FUNCTIONS
 ------------------------------------------------------
+
 local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
     -- Cari user berdasarkan Roblox username
-    local user = findUserByRoblox(fisher)
+    local userAccount = findUserByRobloxUsername(fisher)
 
-    -- JIKA USER TIDAK DITEMUKAN, GUNAKAN NAMA ASLI TANPA MENTION
-    local playerDisplay = fisher -- Default: pakai nama asli dari game
-
-    -- JIKA USER DITEMUKAN DAN NOTIF_CAUGHT = TRUE, BARU KASIH MENTION
-    local shouldPingUser = user and user.settings.notif_caught
-    if shouldPingUser then
-        playerDisplay = "<@" .. user.id_discord .. ">"
-    else
-        return;
+    -- Jika user tidak ditemukan atau notif_caught = false, skip
+    if not userAccount or not userAccount.settings.notif_caught then
+        print("ℹ️ Skipping notification for", fisher, "- User not registered or notifications disabled")
+        return
     end
+
+    local playerDisplay = "<@" .. userAccount.id_discord .. ">"
 
     local color = 5814783
     local tierData = getTierData(tierNumber)
@@ -261,7 +283,7 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     local embed = {
         ["title"] = "🎣 FISH CAUGHT!",
         ["description"] = string.format(
-            "**Player:** %s\n**Fish:** %s\n**Weight:** %s kg\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)",
+            "**Player:** %s\n**Fish:** %s\n**Weight:** %s\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)",
             playerDisplay, fishName, weight, chance, tierName, tierNumber),
         ["color"] = color,
         ["footer"] = {
@@ -275,14 +297,8 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
         }
     end
 
-    -- Tentukan content berdasarkan kondisi
-    local content = ""
-    if shouldPingUser then
-        content = "<@" .. user.id_discord .. "> 🎣 **FISH CAUGHT!**"
-    end
-
     local data = {
-        ["content"] = content,
+        ["content"] = playerDisplay .. " 🎣 **FISH CAUGHT!**",
         ["embeds"] = {embed}
     }
 
@@ -302,57 +318,40 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     if not success then
         warn("[WEBHOOK ERROR] Failed to send fish caught:", result)
     else
-        print("✅ Fish caught notification sent to Discord!")
-        if user then
-            print("   Player: " .. user.username_roblox .. " (Registered)")
-            print("   Notif Caught: " .. tostring(user.settings.notif_caught))
-        else
-            print("   Player: " .. fisher .. " (Not Registered)")
-        end
+        print("✅ Fish caught notification sent for:", userAccount.username_roblox)
     end
 end
 
-------------------------------------------------------
--- SEND EVENT TO DISCORD WEBHOOK
-------------------------------------------------------
 local function sendEvent(message, eventType, pingEveryone)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
-    -- Hanya cari user yang punya notif_weather enabled JIKA pingEveryone = true
     local mentions = ""
     if pingEveryone then
-        local weatherUsers = getUsersWithNotification("notif_weather", true)
-        if weatherUsers and weatherUsers.success and #weatherUsers.data > 0 then
-            local mentionList = {}
-            for _, user in ipairs(weatherUsers.data) do
-                table.insert(mentionList, "<@" .. user.id_discord .. ">")
-            end
-            mentions = table.concat(mentionList, ", ") -- Format: @user1, @user2, @user3
+        local onlineUsers = getOnlineUsersWithNotification("notif_weather", true)
+        if #onlineUsers > 0 then
+            mentions = generateUserMentions(onlineUsers)
+            print("🔔 Tagging " .. #onlineUsers .. " online users with weather notifications")
+        else
+            print("ℹ️ No online users with weather notifications found")
         end
     end
 
-    -- Tentukan warna berdasarkan jenis event
-    local color = 5814783 -- Default color (biru)
+    local color = 5814783 -- Default color
     if eventType == "event_active" then
-        color = 3066993 -- Hijau untuk event aktif
+        color = 3066993 -- Hijau
     elseif eventType == "event_inactive" then
-        color = 15158332 -- Merah untuk event non-aktif
+        color = 15158332 -- Merah
     elseif eventType == "server_luck" then
-        color = 15844367 -- Emas untuk server luck
+        color = 15844367 -- Emas
     elseif eventType == "script_start" then
-        color = 3447003 -- Biru untuk script start
+        color = 3447003 -- Biru
     end
 
     local content = ""
-    if pingEveryone then
-        if mentions ~= "" then
-            content = mentions .. " 🎮 **EVENT NOTIFICATION!**"
-        else
-            -- Jika tidak ada user dengan notif_weather, tetap kasih pesan tanpa mention
-            content = "🎮 **EVENT NOTIFICATION!**"
-        end
-    else
-        content = "" -- No ping untuk event non-aktif
+    if pingEveryone and mentions ~= "" then
+        content = mentions .. " 🎮 **EVENT NOTIFICATION!**"
+    elseif pingEveryone then
+        content = "🎮 **EVENT NOTIFICATION!**"
     end
 
     local data = {
@@ -385,20 +384,16 @@ local function sendEvent(message, eventType, pingEveryone)
 
     if not success then
         warn("[WEBHOOK ERROR] Failed to send event:", result)
+    else
+        print("✅ Event notification sent to Discord")
     end
 end
 
-------------------------------------------------------
--- SEND DEBUG DATA KE DISCORD WEBHOOK
-------------------------------------------------------
 local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, chance)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
-    -- Format field values dengan batasan karakter
     local function formatField(value, maxLength)
-        if not value then
-            return "nil"
-        end
+        if not value then return "nil" end
         local str = tostring(value)
         if #str > maxLength then
             return str:sub(1, maxLength - 3) .. "..."
@@ -408,32 +403,39 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
 
     local embed = {
         ["title"] = "🐞 DEBUG: " .. (label or "Unknown"),
-        ["color"] = 15158332, -- merah
-        ["fields"] = {{
-            ["name"] = "📝 Raw Text",
-            ["value"] = "```" .. formatField(rawText, 100) .. "```",
-            ["inline"] = false
-        }, {
-            ["name"] = "🧹 Clean Text",
-            ["value"] = "```" .. formatField(cleanText, 100) .. "```",
-            ["inline"] = false
-        }, {
-            ["name"] = "👤 Player",
-            ["value"] = formatField(fisher, 50),
-            ["inline"] = true
-        }, {
-            ["name"] = "🎣 Fish Name",
-            ["value"] = formatField(fishName, 50),
-            ["inline"] = true
-        }, {
-            ["name"] = "⚖️ Weight",
-            ["value"] = formatField(weight, 30),
-            ["inline"] = true
-        }, {
-            ["name"] = "🎲 Chance",
-            ["value"] = formatField(chance, 30),
-            ["inline"] = true
-        }},
+        ["color"] = 15158332,
+        ["fields"] = {
+            {
+                ["name"] = "📝 Raw Text",
+                ["value"] = "```" .. formatField(rawText, 100) .. "```",
+                ["inline"] = false
+            },
+            {
+                ["name"] = "🧹 Clean Text",
+                ["value"] = "```" .. formatField(cleanText, 100) .. "```",
+                ["inline"] = false
+            },
+            {
+                ["name"] = "👤 Player",
+                ["value"] = formatField(fisher, 50),
+                ["inline"] = true
+            },
+            {
+                ["name"] = "🎣 Fish Name",
+                ["value"] = formatField(fishName, 50),
+                ["inline"] = true
+            },
+            {
+                ["name"] = "⚖️ Weight",
+                ["value"] = formatField(weight, 30),
+                ["inline"] = true
+            },
+            {
+                ["name"] = "🎲 Chance",
+                ["value"] = formatField(chance, 30),
+                ["inline"] = true
+            }
+        },
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
         }
@@ -465,15 +467,28 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
 end
 
 ------------------------------------------------------
--- REMOVE RICH TEXT FROM STRING (<b>, <font>, etc)
+-- EVENT HANDLERS
 ------------------------------------------------------
-local function stripRichText(str)
-    return (str:gsub("<[^>]->", ""))
+
+local function watchEvent(obj)
+    if obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
+        obj.Changed:Connect(function(prop)
+            if prop == "Visible" then
+                local eventName = obj.Name
+                if obj.Visible then
+                    sendEvent(
+                        string.format("**Event Active!**\n**Event Name:** %s\n**Status:** 🟢 ACTIVE", eventName),
+                        "event_active", true)
+                else
+                    sendEvent(
+                        string.format("**Event Ended!**\n**Event Name:** %s\n**Status:** 🔴 INACTIVE", eventName),
+                        "event_inactive", false)
+                end
+            end
+        end)
+    end
 end
 
-------------------------------------------------------
--- CHAT PARSER (CLEAN CHAT)
-------------------------------------------------------
 game:GetService("TextChatService").OnIncomingMessage = function(msg)
     local rawText = msg.Text
     local clean = stripRichText(rawText)
@@ -484,7 +499,7 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
         local chance = extractChanceInfo(clean)
 
         if fisher and fishName and weight and chance then
-            print("🎣 Fish detected: " .. fishName .. " (" .. weight .. " kg) - Chance: 1 in " .. chance)
+            print("🎣 Fish detected: " .. fishName .. " (" .. weight .. ") - Chance: 1 in " .. chance)
 
             local itemData = getItemData(fishName)
 
@@ -512,42 +527,16 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
 end
 
 ------------------------------------------------------
--- WATCH IMAGEBUTTON / IMAGELABEL VISIBLE CHANGES
+-- INITIALIZATION
 ------------------------------------------------------
-local function watchEvent(obj)
-    if obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
-        obj.Changed:Connect(function(prop)
-            if prop == "Visible" then
-                local status = obj.Visible and "🟢 VISIBLE" or "🔴 HIDDEN"
-                local eventName = obj.Name
 
-                if obj.Visible then
-                    sendEvent(
-                        string.format("**Event Active!**\n**Event Name:** %s\n**Status:** 🟢 ACTIVE", eventName),
-                        "event_active", true)
-                else
-                    sendEvent(
-                        string.format("**Event Ended!**\n**Event Name:** %s\n**Status:** 🔴 INACTIVE", eventName),
-                        "event_inactive", false)
-                end
-            end
-        end)
-    end
-end
-
--- Pantau semua yang sudah ada
+-- Initialize event watchers
 for _, obj in ipairs(eventsFolder:GetDescendants()) do
     watchEvent(obj)
 end
 
--- Pantau yang baru masuk
-eventsFolder.DescendantAdded:Connect(function(obj)
-    watchEvent(obj)
-end)
+eventsFolder.DescendantAdded:Connect(watchEvent)
 
-------------------------------------------------------
--- WATCH SERVER LUCK VISIBLE
-------------------------------------------------------
 serverGui.Changed:Connect(function(prop)
     if prop == "Visible" then
         if serverGui.Visible then
@@ -558,27 +547,21 @@ serverGui.Changed:Connect(function(prop)
     end
 end)
 
-------------------------------------------------------
--- WATCH LUCKCOUNTER TEXT CHANGE
-------------------------------------------------------
 luckCounter:GetPropertyChangedSignal("Text"):Connect(function()
     local luckValue = luckCounter.Text
     print("[LUCK COUNTER] Text:", luckValue)
-
     sendEvent(string.format("**🍀 SERVER LUCK UPDATE**\n**Current Luck:** %s", luckValue), "server_luck", false)
 end)
 
 -- Test API connection on startup
 local function testAPIConnection()
-    local users = getAllUsers()
-    if users and users.success then
-        print("✅ API Connection Successful! Found " .. #users.data .. " users")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\nConnected to API: " .. #users.data ..
-                      " users registered", "script_start", false)
+    local accounts = getAllAccounts()
+    if accounts and accounts.success then
+        print("✅ API Connection Successful! Found " .. #accounts.data .. " accounts")
+        sendEvent("🚀 **Script Started**\nMonitoring system activated!\nConnected to API: " .. #accounts.data .. " accounts registered", "script_start", false)
     else
         print("❌ API Connection Failed!")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\n⚠️ API Connection Failed", "script_start",
-            false)
+        sendEvent("🚀 **Script Started**\nMonitoring system activated!\n⚠️ API Connection Failed", "script_start", false)
     end
 end
 
