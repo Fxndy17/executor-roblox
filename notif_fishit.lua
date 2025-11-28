@@ -13,7 +13,8 @@ local serverGui = serverLuck:WaitForChild("Server")
 local luckCounter = serverGui:WaitForChild("LuckCounter")
 
 -- Configuration
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1443771055356510402/pxvJmtbO-jQ_GPOfrpaIUxFgYLTAFRaizAlnMf4GgEvM3fehfJyC8AVswEqHtqH5xGkN"
+local WEBHOOK_CAUGHT = "https://discord.com/api/webhooks/1443775157381365903/aQmPT3LS58OrBQxiuHH5ChntyR0XhaEFxNDxkNHCZxEGzyaeMyCcjq2e_RwzUXmaldUJ"
+local WEBHOOK_EVENT = "https://discord.com/api/webhooks/1443775782596903044/M8DKjQZ5aizPBzQtT8FHrxRyAqXnO-e_lJq2_vLsAtFPRLLVDoqF5bpQ8k5LIc1iX42o"
 local API_BASE_URL = "https://fishitapi-production.up.railway.app/api"
 
 local ITEM_CACHE = {}
@@ -272,7 +273,8 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
         return
     end
 
-    local playerDisplay = "<@" .. userAccount.id_discord .. ">"
+    -- GUNAKAN NAMA IN-GAME (fisher) BUKAN USER ID MENTION
+    local playerDisplay = fisher
 
     local color = 5814783
     local tierData = getTierData(tierNumber)
@@ -297,8 +299,9 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
         }
     end
 
+    -- CONTENT: Tag user ID tapi di embed show nama in-game
     local data = {
-        ["content"] = playerDisplay .. " 🎣 **FISH CAUGHT!**",
+        ["content"] = "<@" .. userAccount.id_discord .. "> 🎣 **FISH CAUGHT!**",
         ["embeds"] = {embed}
     }
 
@@ -306,7 +309,7 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
 
     local success, result = pcall(function()
         return request({
-            Url = WEBHOOK_URL,
+            Url = WEBHOOK_CAUGHT,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json"
@@ -373,7 +376,7 @@ local function sendEvent(message, eventType, pingEveryone)
 
     local success, result = pcall(function()
         return request({
-            Url = WEBHOOK_URL,
+            Url = WEBHOOK_EVENT,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json"
@@ -450,7 +453,7 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
 
     local success, result = pcall(function()
         return request({
-            Url = WEBHOOK_URL,
+            Url = WEBHOOK_CAUGHT,
             Method = "POST",
             Headers = {
                 ["Content-Type"] = "application/json"
