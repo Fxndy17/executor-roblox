@@ -13,8 +13,10 @@ local serverGui = serverLuck:WaitForChild("Server")
 local luckCounter = serverGui:WaitForChild("LuckCounter")
 
 -- Configuration
-local WEBHOOK_CAUGHT = "https://discord.com/api/webhooks/1443775157381365903/aQmPT3LS58OrBQxiuHH5ChntyR0XhaEFxNDxkNHCZxEGzyaeMyCcjq2e_RwzUXmaldUJ"
-local WEBHOOK_EVENT = "https://discord.com/api/webhooks/1443775782596903044/M8DKjQZ5aizPBzQtT8FHrxRyAqXnO-e_lJq2_vLsAtFPRLLVDoqF5bpQ8k5LIc1iX42o"
+local WEBHOOK_CAUGHT =
+    "https://discord.com/api/webhooks/1443775157381365903/aQmPT3LS58OrBQxiuHH5ChntyR0XhaEFxNDxkNHCZxEGzyaeMyCcjq2e_RwzUXmaldUJ"
+local WEBHOOK_EVENT =
+    "https://discord.com/api/webhooks/1443775782596903044/M8DKjQZ5aizPBzQtT8FHrxRyAqXnO-e_lJq2_vLsAtFPRLLVDoqF5bpQ8k5LIc1iX42o"
 local API_BASE_URL = "https://fishitapi-production.up.railway.app/api"
 
 local ITEM_CACHE = {}
@@ -151,7 +153,7 @@ local function getAllAccounts()
                 ["Content-Type"] = "application/json"
             }
         })
-        
+
         if response and response.StatusCode == 200 then
             local decoded = HTTPService:JSONDecode(response.Body)
             return decoded
@@ -160,12 +162,12 @@ local function getAllAccounts()
             return nil
         end
     end)
-    
+
     if not success then
         warn("[API] PCall failed:", result)
         return nil
     end
-    
+
     return result
 end
 
@@ -178,7 +180,7 @@ local function getUsersWithNotification(notificationType, enabled)
                 ["Content-Type"] = "application/json"
             }
         })
-        
+
         if response and response.StatusCode == 200 then
             local decoded = HTTPService:JSONDecode(response.Body)
             return decoded
@@ -187,12 +189,12 @@ local function getUsersWithNotification(notificationType, enabled)
             return nil
         end
     end)
-    
+
     if not success then
         warn("[API] PCall failed for notifications:", result)
         return nil
     end
-    
+
     return result
 end
 
@@ -230,15 +232,15 @@ local function getOnlineUsersWithNotification(notificationType, enabled)
     if not notificationUsers or not notificationUsers.success then
         return {}
     end
-    
+
     local onlineUsers = {}
     local onlinePlayerNames = {}
-    
+
     -- Get list of online player usernames
     for _, player in ipairs(Players:GetPlayers()) do
         table.insert(onlinePlayerNames, player.Name:lower())
     end
-    
+
     -- Filter users yang sedang online dan punya notifikasi enabled
     for _, user in ipairs(notificationUsers.data) do
         for _, account in ipairs(user.roblox_accounts or {}) do
@@ -253,7 +255,7 @@ local function getOnlineUsersWithNotification(notificationType, enabled)
             end
         end
     end
-    
+
     return onlineUsers
 end
 
@@ -261,7 +263,11 @@ end
 -- WEBHOOK FUNCTIONS
 ------------------------------------------------------
 
-local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
+local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconId)
+    if tierNumber <= 4 then
+        return
+    end
+
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
     -- Cari user berdasarkan Roblox username
@@ -285,16 +291,41 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     local embed = {
         ["title"] = "🎣 FISH CAUGHT!",
         ["description"] = string.format(
-            "**Player:** %s\n**Fish:** %s\n**Weight:** %s\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)",
-            playerDisplay, fishName, weight, chance, tierName, tierNumber),
+            "**Player:** %s\n**Fish:** %s\n**Weight:** %s\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", playerDisplay,
+            fishName, weight, chance, tierName, tierNumber),
         ["color"] = color,
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
         }
     }
 
-    if iconUrl then
-        embed["thumbnail"] = {
+    if iconId then
+        -- Request thumbnail URL dari Roblox API
+        local thumbnailUrl = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. iconId ..
+                                 "&returnPolicy=PlaceHolder&size=420x420&format=webp"
+
+        local success, response = pcall(function()
+            return request({
+                Url = thumbnailUrl,
+                Method = "GET"
+            })
+        end)
+
+        local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg" -- Default fallback
+
+        if success and response.Success then
+            local thumbnailData = HTTPService:JSONDecode(response.Body)
+            if thumbnailData and thumbnailData.data and #thumbnailData.data > 0 then
+                iconUrl = thumbnailData.data[1].imageUrl
+                print("✅ Image loaded from Roblox API:", iconUrl)
+            else
+                print("⚠️ No image data found for iconId:", iconId, "- Using fallback image")
+            end
+        else
+            print("❌ Failed to fetch image for iconId:", iconId, "- Using fallback image")
+        end
+
+        embed["image"] = {
             ["url"] = iconUrl
         }
     end
@@ -396,7 +427,9 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
     local function formatField(value, maxLength)
-        if not value then return "nil" end
+        if not value then
+            return "nil"
+        end
         local str = tostring(value)
         if #str > maxLength then
             return str:sub(1, maxLength - 3) .. "..."
@@ -407,38 +440,31 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
     local embed = {
         ["title"] = "🐞 DEBUG: " .. (label or "Unknown"),
         ["color"] = 15158332,
-        ["fields"] = {
-            {
-                ["name"] = "📝 Raw Text",
-                ["value"] = "```" .. formatField(rawText, 100) .. "```",
-                ["inline"] = false
-            },
-            {
-                ["name"] = "🧹 Clean Text",
-                ["value"] = "```" .. formatField(cleanText, 100) .. "```",
-                ["inline"] = false
-            },
-            {
-                ["name"] = "👤 Player",
-                ["value"] = formatField(fisher, 50),
-                ["inline"] = true
-            },
-            {
-                ["name"] = "🎣 Fish Name",
-                ["value"] = formatField(fishName, 50),
-                ["inline"] = true
-            },
-            {
-                ["name"] = "⚖️ Weight",
-                ["value"] = formatField(weight, 30),
-                ["inline"] = true
-            },
-            {
-                ["name"] = "🎲 Chance",
-                ["value"] = formatField(chance, 30),
-                ["inline"] = true
-            }
-        },
+        ["fields"] = {{
+            ["name"] = "📝 Raw Text",
+            ["value"] = "```" .. formatField(rawText, 100) .. "```",
+            ["inline"] = false
+        }, {
+            ["name"] = "🧹 Clean Text",
+            ["value"] = "```" .. formatField(cleanText, 100) .. "```",
+            ["inline"] = false
+        }, {
+            ["name"] = "👤 Player",
+            ["value"] = formatField(fisher, 50),
+            ["inline"] = true
+        }, {
+            ["name"] = "🎣 Fish Name",
+            ["value"] = formatField(fishName, 50),
+            ["inline"] = true
+        }, {
+            ["name"] = "⚖️ Weight",
+            ["value"] = formatField(weight, 30),
+            ["inline"] = true
+        }, {
+            ["name"] = "🎲 Chance",
+            ["value"] = formatField(chance, 30),
+            ["inline"] = true
+        }},
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
         }
@@ -506,12 +532,9 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
 
             local itemData = getItemData(fishName)
 
-            local iconUrl = nil
+            local iconId = nil
             if itemData and itemData.Data and itemData.Data.Icon then
-                local iconId = string.match(itemData.Data.Icon, "rbxassetid://(%d+)")
-                if iconId then
-                    iconUrl = "https://assetdelivery.roblox.com/v1/asset/?id=" .. iconId
-                end
+                iconId = string.match(itemData.Data.Icon, "rbxassetid://(%d+)")
             end
 
             local tierName = "Unknown"
@@ -521,7 +544,7 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
                 tierName = getTierName(tierNumber) or "Unknown"
             end
 
-            sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconUrl)
+            sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconId)
         else
             print("❌ Failed to extract fish info from message")
             sendDebug("Parsing Failed", rawText, clean, fisher, fishName, weight, chance)
@@ -561,10 +584,12 @@ local function testAPIConnection()
     local accounts = getAllAccounts()
     if accounts and accounts.success then
         print("✅ API Connection Successful! Found " .. #accounts.data .. " accounts")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\nConnected to API: " .. #accounts.data .. " accounts registered", "script_start", false)
+        sendEvent("🚀 **Script Started**\nMonitoring system activated!\nConnected to API: " .. #accounts.data ..
+                      " accounts registered", "script_start", false)
     else
         print("❌ API Connection Failed!")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\n⚠️ API Connection Failed", "script_start", false)
+        sendEvent("🚀 **Script Started**\nMonitoring system activated!\n⚠️ API Connection Failed", "script_start",
+            false)
     end
 end
 
