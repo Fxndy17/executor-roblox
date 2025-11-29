@@ -3,6 +3,9 @@ local HTTPService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local gui = player:WaitForChild("PlayerGui")
 
+local PLACE_ID = game.PlaceId
+local PLACE_NAME = game:GetService("MarketplaceService"):GetProductInfo(PLACE_ID).Name
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Tiers = require(game:GetService("ReplicatedStorage").Tiers)
 
@@ -12,7 +15,8 @@ local serverLuck = eventsFrame:WaitForChild("Server Luck")
 local serverGui = serverLuck:WaitForChild("Server")
 local luckCounter = serverGui:WaitForChild("LuckCounter")
 
--- Configuration
+local WEBHOOK_PLAYER =
+    "https://discord.com/api/webhooks/1444328790019936499/DKycW0JnIeXZoZqM1zu3g3TsweCYWtKu_DfIhB_zzEN6GkHswBYfK4vzCj-pfrHKH6fS"
 local WEBHOOK_CAUGHT =
     "https://discord.com/api/webhooks/1443775157381365903/aQmPT3LS58OrBQxiuHH5ChntyR0XhaEFxNDxkNHCZxEGzyaeMyCcjq2e_RwzUXmaldUJ"
 local WEBHOOK_EVENT =
@@ -20,10 +24,35 @@ local WEBHOOK_EVENT =
 local API_BASE_URL = "https://fishitapi-production.up.railway.app/api"
 
 local ITEM_CACHE = {}
+local EVENT_CACHE = {}
+local PLAYER_JOIN_TIME = {}
 
-------------------------------------------------------
--- UTILITY FUNCTIONS
-------------------------------------------------------
+local function getPlayerInfo(player)
+    local joinTime = PLAYER_JOIN_TIME[player.UserId] or os.time()
+    local playTime = os.time() - joinTime
+
+    local hours = math.floor(playTime / 3600)
+    local minutes = math.floor((playTime % 3600) / 60)
+    local seconds = playTime % 60
+
+    local playTimeFormatted = ""
+    if hours > 0 then
+        playTimeFormatted = string.format("%dh %dm %ds", hours, minutes, seconds)
+    elseif minutes > 0 then
+        playTimeFormatted = string.format("%dm %ds", minutes, seconds)
+    else
+        playTimeFormatted = string.format("%ds", seconds)
+    end
+
+    return {
+        userId = player.UserId,
+        username = player.Name,
+        displayName = player.DisplayName,
+        accountAge = player.AccountAge,
+        joinTime = joinTime,
+        playTime = playTimeFormatted
+    }
+end
 
 local function isSimilar(baseName, inputName)
     baseName = baseName:lower()
@@ -77,6 +106,36 @@ local function getItemData(itemName)
         if success and itemData then
             ITEM_CACHE[itemName] = itemData
             return itemData
+        end
+    end
+
+    return nil
+end
+
+local function getEventsData(eventName)
+    if EVENT_CACHE[eventName] then
+        return EVENT_CACHE[eventName]
+    end
+
+    local eventsFolder = ReplicatedStorage:WaitForChild("Events")
+    if not eventsFolder then
+        return nil
+    end
+
+    local eventModule = eventsFolder:FindFirstChild(eventName)
+
+    if not eventModule then
+        eventModule = findSimilarChild(eventsFolder, eventName)
+    end
+
+    if eventModule and eventModule:IsA("ModuleScript") then
+        local success, eventData = pcall(function()
+            return require(eventModule)
+        end)
+
+        if success and eventData then
+            EVENT_CACHE[eventName] = eventData
+            return eventData
         end
     end
 
@@ -139,10 +198,6 @@ end
 local function stripRichText(str)
     return (str:gsub("<[^>]->", ""))
 end
-
-------------------------------------------------------
--- API FUNCTIONS
-------------------------------------------------------
 
 local function getAllAccounts()
     local success, result = pcall(function()
@@ -236,12 +291,10 @@ local function getOnlineUsersWithNotification(notificationType, enabled)
     local onlineUsers = {}
     local onlinePlayerNames = {}
 
-    -- Get list of online player usernames
     for _, player in ipairs(Players:GetPlayers()) do
         table.insert(onlinePlayerNames, player.Name:lower())
     end
 
-    -- Filter users yang sedang online dan punya notifikasi enabled
     for _, user in ipairs(notificationUsers.data) do
         for _, account in ipairs(user.roblox_accounts or {}) do
             if account.username_roblox then
@@ -259,10 +312,6 @@ local function getOnlineUsersWithNotification(notificationType, enabled)
     return onlineUsers
 end
 
-------------------------------------------------------
--- WEBHOOK FUNCTIONS
-------------------------------------------------------
-
 local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNumber, iconId)
     if tierNumber <= 4 then
         return
@@ -270,16 +319,14 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
 
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
-    -- Cari user berdasarkan Roblox username
     local userAccount = findUserByRobloxUsername(fisher)
+    local plr = getPlayer(fisher)
 
-    -- Jika user tidak ditemukan atau notif_caught = false, skip
     if not userAccount or not userAccount.settings.notif_caught then
         print("ℹ️ Skipping notification for", fisher, "- User not registered or notifications disabled")
         return
     end
 
-    -- GUNAKAN NAMA IN-GAME (fisher) BUKAN USER ID MENTION
     local playerDisplay = fisher
 
     local color = 5814783
@@ -288,49 +335,104 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
         color = tierData.Color
     end
 
+    local function fetchIconWithRetry(iconId, maxRetries)
+        local retries = 0
+
+        while retries < maxRetries do
+            local thumbnailUrl = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. iconId ..
+                                     "&returnPolicy=PlaceHolder&size=420x420&format=webp"
+
+            local success, response = pcall(function()
+                return request({
+                    Url = thumbnailUrl,
+                    Method = "GET"
+                })
+            end)
+
+            if success and response.Success then
+                local thumbnailData = HTTPService:JSONDecode(response.Body)
+                if thumbnailData and thumbnailData.data and #thumbnailData.data > 0 then
+                    local fetchedUrl = thumbnailData.data[1].imageUrl
+                    print("✅ Image loaded from Roblox API (Attempt " .. (retries + 1) .. "):", fetchedUrl)
+                    return fetchedUrl
+                else
+                    print("⚠️ No image data found for iconId:", iconId, "- Attempt", (retries + 1))
+                end
+            else
+                print("❌ Failed to fetch image for iconId:", iconId, "- Attempt", (retries + 1), "- Error:", response)
+            end
+
+            retries = retries + 1
+
+            if retries < maxRetries then
+                wait(1) 
+            end
+        end
+
+        return nil 
+    end
+
+    local leaderstats = plr.leaderstats
+    local rareFish = leaderstats["Rarest Fish"].Value
+    local caught = leaderstats["Caught"].Value
+
     local embed = {
         ["title"] = "🎣 FISH CAUGHT!",
-        ["description"] = string.format(
-            "**Player:** %s\n**Fish:** %s\n**Weight:** %s\n**Chance:** 1 in %s\n**Tier:** %s (Tier %d)", playerDisplay,
-            fishName, weight, chance, tierName, tierNumber),
         ["color"] = color,
+
+        ["fields"] = {{
+            ["name"] = "👤 Player",
+            ["value"] = playerDisplay,
+            ["inline"] = true
+        }, {
+            ["name"] = "🐟 Fish",
+            ["value"] = fishName,
+            ["inline"] = true
+        }, {
+            ["name"] = "⚖️ Weight",
+            ["value"] = tostring(weight),
+            ["inline"] = true
+        }, {
+            ["name"] = "🎲 Chance",
+            ["value"] = "1 in " .. tostring(chance),
+            ["inline"] = true
+        }, {
+            ["name"] = "⭐ Tier",
+            ["value"] = string.format("%s (Tier %d)", tierName, tierNumber),
+            ["inline"] = true
+        }, {
+            ["name"] = "👑 Rarest Fish",
+            ["value"] = tostring(rareFish),
+            ["inline"] = true
+        }, {
+            ["name"] = "📦 Total Caught",
+            ["value"] = tostring(caught),
+            ["inline"] = true
+        }},
+
         ["footer"] = {
             ["text"] = "Timestamp: " .. timestamp
         }
     }
 
     if iconId then
-        -- Request thumbnail URL dari Roblox API
-        local thumbnailUrl = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. iconId ..
-                                 "&returnPolicy=PlaceHolder&size=420x420&format=webp"
+        local fetchedUrl = fetchIconWithRetry(iconId, 3) 
 
-        local success, response = pcall(function()
-            return request({
-                Url = thumbnailUrl,
-                Method = "GET"
-            })
-        end)
+        local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg" 
 
-        local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg" -- Default fallback
-
-        if success and response.Success then
-            local thumbnailData = HTTPService:JSONDecode(response.Body)
-            if thumbnailData and thumbnailData.data and #thumbnailData.data > 0 then
-                iconUrl = thumbnailData.data[1].imageUrl
-                print("✅ Image loaded from Roblox API:", iconUrl)
-            else
-                print("⚠️ No image data found for iconId:", iconId, "- Using fallback image")
-            end
+        if fetchedUrl then
+            iconUrl = fetchedUrl
         else
-            print("❌ Failed to fetch image for iconId:", iconId, "- Using fallback image")
+            print("🚨 All attempts failed to fetch image for iconId:", iconId, "- Using fallback image")
         end
 
-        embed["image"] = {
+        embed["thumbnail"] = {
             ["url"] = iconUrl
         }
+    else
+        print("ℹ️ No iconId provided, skipping image")
     end
 
-    -- CONTENT: Tag user ID tapi di embed show nama in-game
     local data = {
         ["content"] = "<@" .. userAccount.id_discord .. "> 🎣 **FISH CAUGHT!**",
         ["embeds"] = {embed}
@@ -356,7 +458,94 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     end
 end
 
-local function sendEvent(message, eventType, pingEveryone)
+local function sendScriptStatusEmbed(status, accountsCount)
+    local color = status == "success" and 3066993 or 15158332
+    local title = status == "success" and "🚀 Script Started Successfully" or "⚠️ Script Started with Issues"
+
+    local description = status == "success" and
+                            string.format("Monitoring system activated!\nConnected to API: **%d accounts** registered",
+            accountsCount) and "Monitoring system activated!\n⚠️ API Connection Failed"
+
+    local embed = {
+        ["title"] = title,
+        ["description"] = description,
+        ["color"] = color,
+        ["thumbnail"] = {
+            ["url"] = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg"
+        },
+        ["footer"] = {
+            ["text"] = "Timestamp: " .. os.date("%Y-%m-%d %H:%M:%S")
+        }
+    }
+
+    local data = {
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    pcall(function()
+        request({
+            Url = WEBHOOK_EVENT,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    print("✅ Script status notification sent")
+end
+
+local function sendServerLuckEmbed(luckValue, eventType)
+    local color = 5814783
+    local title = "🍀 Server Luck"
+
+    local description = ""
+    if eventType == "active" then
+        description = "**SERVER LUCK EVENT ACTIVE!**\nServer Luck event is now active!"
+        color = 3066993
+    elseif eventType == "ended" then
+        description = "**SERVER LUCK EVENT ENDED!**\nServer Luck event has ended."
+        color = 15158332
+    else
+        description = string.format("**SERVER LUCK UPDATE**\n**Current Luck:** %s", luckValue)
+    end
+
+    local embed = {
+        ["title"] = title,
+        ["description"] = description,
+        ["color"] = color,
+        ["thumbnail"] = {
+            ["url"] = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg"
+        },
+        ["footer"] = {
+            ["text"] = "Timestamp: " .. os.date("%Y-%m-%d %H:%M:%S")
+        }
+    }
+
+    local data = {
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    pcall(function()
+        request({
+            Url = WEBHOOK_EVENT,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    print("✅ Server luck notification sent")
+end
+
+local function sendEvent(eventName, enabled, pingEveryone)
     local timestamp = os.date("%Y-%m-%d %H:%M:%S")
 
     local mentions = ""
@@ -371,14 +560,10 @@ local function sendEvent(message, eventType, pingEveryone)
     end
 
     local color = 5814783 -- Default color
-    if eventType == "event_active" then
+    if enabled then
         color = 3066993 -- Hijau
-    elseif eventType == "event_inactive" then
+    else
         color = 15158332 -- Merah
-    elseif eventType == "server_luck" then
-        color = 15844367 -- Emas
-    elseif eventType == "script_start" then
-        color = 3447003 -- Biru
     end
 
     local content = ""
@@ -386,6 +571,111 @@ local function sendEvent(message, eventType, pingEveryone)
         content = mentions .. " 🎮 **EVENT NOTIFICATION!**"
     elseif pingEveryone then
         content = "🎮 **EVENT NOTIFICATION!**"
+    end
+
+    local eventData = getEventsData(eventName) 
+    local durationMinutes = eventData and eventData.Duration and math.floor(eventData.Duration / 60) or 0
+
+    local modifiersText = ""
+    if eventData and eventData.Modifiers then
+        for key, value in pairs(eventData.Modifiers) do
+            modifiersText = modifiersText .. string.format("**%s:** +%s\n", key, tostring(value))
+        end
+    end
+
+    local additionalInfo = ""
+
+    if eventData and eventData.Variants and #eventData.Variants > 0 then
+        additionalInfo = additionalInfo ..
+                             string.format("**🎭 Variants:** %s\n", table.concat(eventData.Variants, ", "))
+    end
+
+    if eventData and eventData.GlobalFish and #eventData.GlobalFish > 0 then
+        additionalInfo = additionalInfo ..
+                             string.format("**🐟 Global Fish:** %s\n", table.concat(eventData.GlobalFish, ", "))
+    end
+
+    if eventData and eventData.LinkedEvents and eventData.LinkedEvents.Modifiers then
+        for eventName, modifiers in pairs(eventData.LinkedEvents.Modifiers) do
+            additionalInfo = additionalInfo .. string.format("**🔗 Linked Event - %s:**\n", eventName)
+            for modKey, modValue in pairs(modifiers) do
+                additionalInfo = additionalInfo .. string.format("  • **%s:** +%s\n", modKey, tostring(modValue))
+            end
+        end
+    end
+
+    if eventData and eventData.Coordinates and #eventData.Coordinates > 0 then
+        local coordStrings = {}
+        for i, coord in ipairs(eventData.Coordinates) do
+            table.insert(coordStrings, string.format("(%.0f, %.0f, %.0f)", coord.X, coord.Y, coord.Z))
+        end
+        additionalInfo = additionalInfo .. string.format("**📍 Coordinates:** %s\n", table.concat(coordStrings, ", "))
+    end
+
+    if eventData and eventData.Tier then
+        additionalInfo = additionalInfo .. string.format("**⭐ Tier:** %s\n", tostring(eventData.Tier))
+    end
+
+    local message = string.format("⭐ **EVENT ACTIVE: %s**\n%s\n\n**🕒 Duration:** %s minutes\n%s%s%s",
+        eventData and eventData.Name or "Unknown Event", eventData and eventData.Description or "", durationMinutes,
+        modifiersText ~= "" and "**📊 Modifiers:**\n" .. modifiersText .. "\n" or "", additionalInfo ~= "" and
+            "**📋 Event Details:**\n" .. additionalInfo .. "\n" or "", eventData and eventData.GlobalDescription and
+            "**🌍 Global Effect:** " .. eventData.GlobalDescription or "")
+
+    local iconId = nil
+    if eventData and eventData.Icon then
+        iconId = string.match(eventData.Icon, "rbxassetid://(%d+)")
+    end
+
+    local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg"
+
+    local function fetchIconWithRetry(iconId, maxRetries)
+        local retries = 0
+
+        while retries < maxRetries do
+            local thumbnailUrl = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. iconId ..
+                                     "&returnPolicy=PlaceHolder&size=420x420&format=webp"
+
+            local success, response = pcall(function()
+                return request({
+                    Url = thumbnailUrl,
+                    Method = "GET"
+                })
+            end)
+
+            if success and response.Success then
+                local thumbnailData = HTTPService:JSONDecode(response.Body)
+                if thumbnailData and thumbnailData.data and #thumbnailData.data > 0 then
+                    local fetchedUrl = thumbnailData.data[1].imageUrl
+                    print("✅ Image loaded from Roblox API (Attempt " .. (retries + 1) .. "):", fetchedUrl)
+                    return fetchedUrl
+                else
+                    print("⚠️ No image data found for iconId:", iconId, "- Attempt", (retries + 1))
+                end
+            else
+                print("❌ Failed to fetch image for iconId:", iconId, "- Attempt", (retries + 1), "- Error:", response)
+            end
+
+            retries = retries + 1
+
+            if retries < maxRetries then
+                wait(1) 
+            end
+        end
+
+        return nil
+    end
+
+    if iconId then
+        local fetchedUrl = fetchIconWithRetry(iconId, 3) 
+
+        if fetchedUrl then
+            iconUrl = fetchedUrl
+        else
+            print("🚨 All attempts failed to fetch image for iconId:", iconId, "- Using fallback image")
+        end
+    else
+        print("ℹ️ No iconId found, using fallback image")
     end
 
     local data = {
@@ -398,7 +688,7 @@ local function sendEvent(message, eventType, pingEveryone)
                 ["text"] = "Timestamp: " .. timestamp
             },
             ["thumbnail"] = {
-                ["url"] = "https://cdn.discordapp.com/emojis/1117363660576395324.webp"
+                ["url"] = iconUrl
             }
         }}
     }
@@ -495,24 +785,12 @@ local function sendDebug(label, rawText, cleanText, fisher, fishName, weight, ch
     end
 end
 
-------------------------------------------------------
--- EVENT HANDLERS
-------------------------------------------------------
-
 local function watchEvent(obj)
     if obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
         obj.Changed:Connect(function(prop)
             if prop == "Visible" then
                 local eventName = obj.Name
-                if obj.Visible then
-                    sendEvent(
-                        string.format("**Event Active!**\n**Event Name:** %s\n**Status:** 🟢 ACTIVE", eventName),
-                        "event_active", true)
-                else
-                    sendEvent(
-                        string.format("**Event Ended!**\n**Event Name:** %s\n**Status:** 🔴 INACTIVE", eventName),
-                        "event_inactive", false)
-                end
+                sendEvent(eventName, obj.Visible, not obj.Visible)
             end
         end)
     end
@@ -552,11 +830,6 @@ game:GetService("TextChatService").OnIncomingMessage = function(msg)
     end
 end
 
-------------------------------------------------------
--- INITIALIZATION
-------------------------------------------------------
-
--- Initialize event watchers
 for _, obj in ipairs(eventsFolder:GetDescendants()) do
     watchEvent(obj)
 end
@@ -566,9 +839,9 @@ eventsFolder.DescendantAdded:Connect(watchEvent)
 serverGui.Changed:Connect(function(prop)
     if prop == "Visible" then
         if serverGui.Visible then
-            sendEvent("**🍀 SERVER LUCK ACTIVE!**\nServer Luck event is now active!", "event_active", true)
+            sendServerLuckEmbed("", "active")
         else
-            sendEvent("**🍀 SERVER LUCK ENDED!**\nServer Luck event has ended.", "event_inactive", false)
+            sendServerLuckEmbed("", "ended")
         end
     end
 end)
@@ -576,20 +849,174 @@ end)
 luckCounter:GetPropertyChangedSignal("Text"):Connect(function()
     local luckValue = luckCounter.Text
     print("[LUCK COUNTER] Text:", luckValue)
-    sendEvent(string.format("**🍀 SERVER LUCK UPDATE**\n**Current Luck:** %s", luckValue), "server_luck", false)
+    sendServerLuckEmbed(luckValue, "update")
 end)
 
--- Test API connection on startup
+local function getServerInfo()
+    local players = Players:GetPlayers()
+    local maxPlayers = Players.MaxPlayers
+
+    return {
+        placeName = PLACE_NAME,
+        placeId = PLACE_ID,
+        jobId = game.JobId,
+        playerCount = #players,
+        maxPlayers = maxPlayers,
+        serverLoad = math.floor((#players / maxPlayers) * 100)
+    }
+end
+
+local function sendPlayerWebhook(player, action)
+    local playerInfo = getPlayerInfo(player)
+    local serverInfo = getServerInfo()
+
+    local userAccount = findUserByRobloxUsername(player.Name)
+
+    local color = action == "join" and 3066993 or 15158332 -- Green for join, Red for leave
+    local title = action == "join" and "🟢 Player Joined" or "🔴 Player Left"
+    local description = action == "join" and "A player has joined the game" or "A player has left the game"
+
+    local content = ""
+    if userAccount then
+        content = "<@" .. userAccount.id_discord .. "> "
+    end
+    content = content .. (action == "join" and "**🟢 JOINED THE GAME!**" or "**🔴 LEFT THE GAME!**")
+
+    local embed = {
+        ["title"] = title,
+        ["description"] = description,
+        ["color"] = color,
+        ["thumbnail"] = {
+            ["url"] = string.format(
+                "https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png",
+                playerInfo.userId)
+        },
+        ["fields"] = {{
+            ["name"] = "👤 Player Info",
+            ["value"] = string.format("**Username:** %s\n**Display Name:** %s\n**User ID:** %d", playerInfo.username,
+                playerInfo.displayName, playerInfo.userId),
+            ["inline"] = true
+        }, {
+            ["name"] = "📊 Account Info",
+            ["value"] = string.format("**Account Age:** %d days\n**Play Time:** %s", playerInfo.accountAge,
+                playerInfo.playTime),
+            ["inline"] = true
+        }, {
+            ["name"] = "🎮 Server Info",
+            ["value"] = string.format("**Server:** %s\n**Players:** %d/%d (%d%%)", serverInfo.placeName,
+                serverInfo.playerCount, serverInfo.maxPlayers, serverInfo.serverLoad),
+            ["inline"] = false
+        }},
+        ["footer"] = {
+            ["text"] = string.format("Server ID: %s | %s", serverInfo.jobId, os.date("%Y-%m-%d %H:%M:%S"))
+        }
+    }
+
+    local data = {
+        ["content"] = content,
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    local success, result = pcall(function()
+        return request({
+            Url = WEBHOOK_PLAYER,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    if success then
+        print(string.format("✅ %s notification sent for: %s", action:upper(), player.Name))
+    else
+        warn(string.format("❌ Failed to send %s notification: %s", action, result))
+    end
+end
+
+local function onPlayerAdded(player)
+    PLAYER_JOIN_TIME[player.UserId] = os.time()
+
+    wait(2)
+
+    sendPlayerWebhook(player, "join")
+
+    player.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            sendPlayerWebhook(player, "leave")
+            PLAYER_JOIN_TIME[player.UserId] = nil
+        end
+    end)
+end
+
+local function onPlayerRemoving(player)
+    sendPlayerWebhook(player, "leave")
+    PLAYER_JOIN_TIME[player.UserId] = nil
+end
+
+local function sendServerStartNotification()
+    local serverInfo = getServerInfo()
+
+    local embed = {
+        ["title"] = "🚀 Server Started",
+        ["description"] = "Game server is now online",
+        ["color"] = 3447003, -- Blue
+        ["fields"] = {{
+            ["name"] = "🎮 Server Information",
+            ["value"] = string.format("**Game:** %s\n**Place ID:** %d\n**Max Players:** %d", serverInfo.placeName,
+                serverInfo.placeId, serverInfo.maxPlayers),
+            ["inline"] = true
+        }, {
+            ["name"] = "📊 Current Status",
+            ["value"] = string.format("**Players Online:** %d\n**Server Load:** %d%%", serverInfo.playerCount,
+                serverInfo.serverLoad),
+            ["inline"] = true
+        }},
+        ["footer"] = {
+            ["text"] = string.format("Server ID: %s | %s", serverInfo.jobId, os.date("%Y-%m-%d %H:%M:%S"))
+        }
+    }
+
+    local data = {
+        ["embeds"] = {embed}
+    }
+
+    local jsonData = HTTPService:JSONEncode(data)
+
+    pcall(function()
+        request({
+            Url = WEBHOOK_PLAYER,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonData
+        })
+    end)
+
+    print("✅ Server start notification sent")
+end
+
+sendServerStartNotification()
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    PLAYER_JOIN_TIME[player.UserId] = os.time()
+end
+
 local function testAPIConnection()
     local accounts = getAllAccounts()
     if accounts and accounts.success then
-        print("✅ API Connection Successful! Found " .. #accounts.data .. " accounts")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\nConnected to API: " .. #accounts.data ..
-                      " accounts registered", "script_start", false)
+        print("API Connection Successful! Found " .. #accounts.data .. " accounts")
+        sendScriptStatusEmbed("success", #accounts.data)
     else
-        print("❌ API Connection Failed!")
-        sendEvent("🚀 **Script Started**\nMonitoring system activated!\n⚠️ API Connection Failed", "script_start",
-            false)
+        print("API Connection Failed!")
+        sendScriptStatusEmbed("failed", 0)
     end
 end
 
