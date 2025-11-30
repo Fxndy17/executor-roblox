@@ -15,6 +15,8 @@ local serverLuck = eventsFrame:WaitForChild("Server Luck")
 local serverGui = serverLuck:WaitForChild("Server")
 local luckCounter = serverGui:WaitForChild("LuckCounter")
 
+local hud = gui.HUD.Frame.Frame.Inside.ScrollingFrame
+
 local WEBHOOK_PLAYER =
     "https://discord.com/api/webhooks/1444328790019936499/DKycW0JnIeXZoZqM1zu3g3TsweCYWtKu_DfIhB_zzEN6GkHswBYfK4vzCj-pfrHKH6fS"
 local WEBHOOK_CAUGHT =
@@ -365,11 +367,11 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
             retries = retries + 1
 
             if retries < maxRetries then
-                wait(1) 
+                wait(1)
             end
         end
 
-        return nil 
+        return nil
     end
 
     local leaderstats = plr.leaderstats
@@ -416,9 +418,9 @@ local function sendFishCaught(fisher, fishName, weight, chance, tierName, tierNu
     }
 
     if iconId then
-        local fetchedUrl = fetchIconWithRetry(iconId, 3) 
+        local fetchedUrl = fetchIconWithRetry(iconId, 3)
 
-        local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg" 
+        local iconUrl = "https://i.pinimg.com/736x/bb/a6/8e/bba68ed1c87ee67b4ee324e243603c8a.jpg"
 
         if fetchedUrl then
             iconUrl = fetchedUrl
@@ -573,7 +575,7 @@ local function sendEvent(eventName, enabled, pingEveryone)
         content = "🎮 **EVENT NOTIFICATION!**"
     end
 
-    local eventData = getEventsData(eventName) 
+    local eventData = getEventsData(eventName)
     local durationMinutes = eventData and eventData.Duration and math.floor(eventData.Duration / 60) or 0
 
     local modifiersText = ""
@@ -659,7 +661,7 @@ local function sendEvent(eventName, enabled, pingEveryone)
             retries = retries + 1
 
             if retries < maxRetries then
-                wait(1) 
+                wait(1)
             end
         end
 
@@ -667,7 +669,7 @@ local function sendEvent(eventName, enabled, pingEveryone)
     end
 
     if iconId then
-        local fetchedUrl = fetchIconWithRetry(iconId, 3) 
+        local fetchedUrl = fetchIconWithRetry(iconId, 3)
 
         if fetchedUrl then
             iconUrl = fetchedUrl
@@ -1008,6 +1010,220 @@ Players.PlayerRemoving:Connect(onPlayerRemoving)
 for _, player in ipairs(Players:GetPlayers()) do
     PLAYER_JOIN_TIME[player.UserId] = os.time()
 end
+
+local scrollingFrame = hud
+
+-- Fungsi untuk mengirim embed ke Discord
+local function sendEventEmbed(eventData, eventType)
+    local embedData = {
+        ["content"] = eventType == "new" and "@everyone **ADMIN EVENT!**" or "",
+        ["embeds"] = {{
+            ["title"] = "ADMIN EVENT",
+            ["color"] = eventType == "new" and 65280 or (eventType == "update" and 16776960 or 16711680),
+            ["fields"] = {},
+            ["footer"] = {
+                ["text"] = os.date("🕒 %Y-%m-%d %H:%M:%S")
+            }
+        }}
+    }
+
+    local embed = embedData.embeds[1]
+
+    -- Add fields berdasarkan data yang tersedia
+    if eventData.eventName then
+        table.insert(embed.fields, {
+            ["name"] = "📝 Event Name",
+            ["value"] = eventData.eventName,
+            ["inline"] = true
+        })
+    end
+
+    if eventData.description then
+        table.insert(embed.fields, {
+            ["name"] = "📄 Description",
+            ["value"] = eventData.description,
+            ["inline"] = false
+        })
+    end
+
+    if eventData.reqLevel then
+        table.insert(embed.fields, {
+            ["name"] = "🎯 Required Level",
+            ["value"] = eventData.reqLevel,
+            ["inline"] = true
+        })
+    end
+
+    if eventData.time then
+        table.insert(embed.fields, {
+            ["name"] = "⏰ Time",
+            ["value"] = eventData.time,
+            ["inline"] = true
+        })
+    end
+
+    -- Kirim menggunakan request function
+    local response = request({
+        Url = WEBHOOK_EVENT,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = game:GetService("HttpService"):JSONEncode(embedData)
+    })
+
+    if response.Success then
+        print("✅ Embed berhasil dikirim ke Discord")
+    else
+        warn("❌ Gagal mengirim embed: " .. tostring(response.StatusCode))
+    end
+end
+
+-- Variabel untuk menyimpan data template
+local templateData = {}
+
+local function setupTemplateMonitoring(template)
+    print("Template baru ditemukan:", template.Name)
+
+    local eventId = tostring(template:GetDebugId())
+    templateData[eventId] = {
+        title = "",
+        eventName = "",
+        description = "",
+        reqLevel = "",
+        time = ""
+    }
+
+    -- Kirim embed untuk event baru
+    local function sendNewEvent()
+        templateData[eventId].title = "New Event Detected"
+        sendEventEmbed(templateData[eventId], "new")
+    end
+
+    -- Kirim embed untuk update event
+    local function sendUpdate(fieldName, newValue)
+        templateData[eventId][fieldName] = newValue
+        sendEventEmbed(templateData[eventId], "update")
+    end
+
+    -- Dapatkan semua elemen yang dibutuhkan dari template ini
+    local inside = template:FindFirstChild("Inside")
+    if inside then
+        local content = inside:FindFirstChild("Content")
+        if content then
+            -- Get Title
+            local top = content:FindFirstChild("Top")
+            if top then
+                local title = top:FindFirstChild("TextLabel")
+                if title then
+                    print("Title:", title.Text)
+                    templateData[eventId].title = title.Text
+
+                    -- Monitor perubahan title
+                    title.Changed:Connect(function(prop)
+                        if prop == "Text" then
+                            print("Title berubah:", title.Text)
+                            sendUpdate("title", title.Text)
+                        end
+                    end)
+                end
+            end
+
+            -- Get Event Name, Description, dll
+            local bottom = content:FindFirstChild("Bottom")
+            if bottom then
+                local display = bottom:FindFirstChild("Display")
+                if display then
+                    local eventName = display:FindFirstChild("Header")
+                    if eventName then
+                        print("Event Name:", eventName.Text)
+                        templateData[eventId].eventName = eventName.Text
+
+                        -- Monitor perubahan event name
+                        eventName.Changed:Connect(function(prop)
+                            if prop == "Text" then
+                                print("Event Name berubah:", eventName.Text)
+                                sendUpdate("eventName", eventName.Text)
+                            end
+                        end)
+                    end
+                end
+
+                local desc = bottom:FindFirstChild("Description")
+                if desc then
+                    print("Description:", desc.Text)
+                    templateData[eventId].description = desc.Text
+
+                    -- Monitor perubahan description
+                    desc.Changed:Connect(function(prop)
+                        if prop == "Text" then
+                            print("Description berubah:", desc.Text)
+                            sendUpdate("description", desc.Text)
+                        end
+                    end)
+                end
+
+                local info = bottom:FindFirstChild("Info")
+                if info then
+                    local reqLevel = info:FindFirstChild("ReqLevel")
+                    if reqLevel then
+                        print("Req Level:", reqLevel.Text)
+                        templateData[eventId].reqLevel = reqLevel.Text
+
+                        -- Monitor perubahan required level
+                        reqLevel.Changed:Connect(function(prop)
+                            if prop == "Text" then
+                                print("Req Level berubah:", reqLevel.Text)
+                                sendUpdate("reqLevel", reqLevel.Text)
+                            end
+                        end)
+                    end
+
+                    local time = info:FindFirstChild("Timer")
+                    if time then
+                        print("Time:", time.Text)
+                        templateData[eventId].time = time.Text
+
+                        -- Monitor perubahan waktu
+                        time.Changed:Connect(function(prop)
+                            if prop == "Text" then
+                                print("Waktu berubah:", time.Text)
+                                sendUpdate("time", time.Text)
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Kirim notifikasi event baru setelah semua data terkumpul
+    delay(0.5, sendNewEvent)
+
+    -- Monitor ketika template dihapus (event habis)
+    template.AncestryChanged:Connect(function()
+        if not template.Parent then
+            print("Template dihapus - Event habis")
+            sendEventEmbed(templateData[eventId], "ended")
+            templateData[eventId] = nil
+        end
+    end)
+end
+
+-- Monitor untuk template yang sudah ada
+for _, template in ipairs(scrollingFrame:GetChildren()) do
+    if template.Name == "Template" then
+        setupTemplateMonitoring(template)
+    end
+end
+
+-- Monitor untuk template baru yang ditambahkan
+scrollingFrame.ChildAdded:Connect(function(child)
+    if child.Name == "Template" then
+        wait(0.1) -- Tunggu sedikit agar properti terload
+        setupTemplateMonitoring(child)
+    end
+end)
 
 local function testAPIConnection()
     local accounts = getAllAccounts()
