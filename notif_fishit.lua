@@ -17,12 +17,9 @@ local luckCounter = serverGui:WaitForChild("LuckCounter")
 
 local hud = gui.HUD.Frame.Frame.Inside.ScrollingFrame
 
-local WEBHOOK_PLAYER =
-    "https://discord.com/api/webhooks/1444328790019936499/DKycW0JnIeXZoZqM1zu3g3TsweCYWtKu_DfIhB_zzEN6GkHswBYfK4vzCj-pfrHKH6fS"
-local WEBHOOK_CAUGHT =
-    "https://discord.com/api/webhooks/1443775157381365903/aQmPT3LS58OrBQxiuHH5ChntyR0XhaEFxNDxkNHCZxEGzyaeMyCcjq2e_RwzUXmaldUJ"
-local WEBHOOK_EVENT =
-    "https://discord.com/api/webhooks/1443775782596903044/M8DKjQZ5aizPBzQtT8FHrxRyAqXnO-e_lJq2_vLsAtFPRLLVDoqF5bpQ8k5LIc1iX42o"
+local WEBHOOK_PLAYER = "https://discord.com/api/webhooks/1448855276588499074/2SOhJPAJ3opHZiNrnhqybVkBucd9466nRVPNtIWkOQZXZp1icJv0n3L2dDJr8aJw5g-m"
+local WEBHOOK_CAUGHT = "https://discord.com/api/webhooks/1448855116751835282/AQrdU0AnZQkHsBqPV1Xioe7n7vceCjOnEuG-_2e_rg1_Y9Ztvxf4eTVHGDgCCFRKmH16"
+local WEBHOOK_EVENT = "https://discord.com/api/webhooks/1448855209928560672/b3ctW9dJYcvNYCj15L6o484N_-WMi8agyjW27PtV6_8-rHH3zkch_5JOcmLeVE31xtS7"
 local API_BASE_URL = "https://fishitapi-production.up.railway.app/api"
 
 local ITEM_CACHE = {}
