@@ -884,15 +884,17 @@ local function sendPlayerWebhook(player, action)
     local playerInfo = getPlayerInfo(player)
     local serverInfo = getServerInfo()
 
-    local userAccount = findUserByRobloxId(player.UserId)
+    local userAccount = findUserByRobloxId(playerInfo.userId)
 
     local color = action == "join" and 3066993 or 15158332 -- Green for join, Red for leave
     local title = action == "join" and "🟢 Player Joined" or "🔴 Player Left"
     local description = action == "join" and "A player has joined the game" or "A player has left the game"
 
     local content = ""
-    if userAccount and not action == "join" then
-        content = "<@" .. userAccount.id_discord .. "> "
+    if userAccount then
+        if action == "leave" then
+            content = "<@" .. userAccount.id_discord .. "> "
+        end
     end
     content = content .. (action == "join" and "**🟢 JOINED THE GAME!**" or "**🔴 LEFT THE GAME!**")
 
