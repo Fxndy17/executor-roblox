@@ -274,6 +274,20 @@ local function findUserByRobloxUsername(username)
     return nil
 end
 
+local function findUserByRobloxId(userId)
+    local allAccounts = getAllAccounts()
+    if not allAccounts or not allAccounts.success then
+        return nil
+    end
+
+    for _, account in ipairs(allAccounts.data) do
+        if account.id_roblox and tonumber(account.id_roblox) == tonumber(userId) then
+            return account
+        end
+    end
+    return nil
+end
+
 local function generateUserMentions(users)
     local mentions = {}
     for _, user in ipairs(users) do
@@ -870,7 +884,7 @@ local function sendPlayerWebhook(player, action)
     local playerInfo = getPlayerInfo(player)
     local serverInfo = getServerInfo()
 
-    local userAccount = findUserByRobloxUsername(player.Name)
+    local userAccount = findUserByRobloxId(player.UserId)
 
     local color = action == "join" and 3066993 or 15158332 -- Green for join, Red for leave
     local title = action == "join" and "🟢 Player Joined" or "🔴 Player Left"
