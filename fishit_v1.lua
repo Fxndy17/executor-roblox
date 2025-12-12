@@ -480,7 +480,7 @@ function NotifyPlayerStatus(player, action)
         footer = {text = string.format("Server ID: %s | %s", game.JobId, os.date("%Y-%m-%d %H:%M:%S"))}
     }
     
-    local content = userAccount and "<@" .. userAccount.id_discord .. "> " or ""
+    local content = userAccount and action == "leave" and "<@" .. userAccount.id_discord .. "> " or ""
     content = content .. (action == "join" and "**🟢 JOINED THE GAME!**" or "**🔴 LEFT THE GAME!**")
     
     local data = {
